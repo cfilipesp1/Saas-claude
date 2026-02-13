@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OdontoClinic — Fichas Clínicas</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'DM Sans', 'Segoe UI', system-ui, sans-serif; background: #F1F5F9; color: #0F172A; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+    input, select, textarea { font-family: inherit; }
+    button { font-family: inherit; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ─── DATA ────────────────────────────────────────────────────────────
+    const SPECIALTIES = {
+      ortodontia: {
+        label: "Ortodontia", icon: "🦷", color: "#0EA5E9",
+        procedures: [
+          "Instalação de aparelho fixo","Manutenção de aparelho fixo","Troca de fio ortodôntico",
+          "Colagem de braquete","Bandagem","Instalação de aparelho móvel","Ajuste de aparelho móvel",
+          "Contenção fixa","Contenção removível","Mini-implante ortodôntico","Elástico intermaxilar",
+          "Moldagem ortodôntica","Documentação ortodôntica","Remoção de aparelho","Expansor palatino",
+          "Alinhador transparente",
+        ],
+      },
+      endodontia: {
+        label: "Endodontia", icon: "🔬", color: "#8B5CF6",
+        procedures: [
+          "Tratamento de canal - unirradicular","Tratamento de canal - birradicular",
+          "Tratamento de canal - multirradicular","Retratamento endodôntico",
+          "Capeamento pulpar direto","Capeamento pulpar indireto","Pulpotomia",
+          "Pulpectomia","Drenagem de abscesso","Curativo de demora",
+        ],
+      },
+      periodontia: {
+        label: "Periodontia", icon: "🩺", color: "#10B981",
+        procedures: [
+          "Raspagem supragengival","Raspagem subgengival","Profilaxia dental",
+          "Aplicação de flúor","Gengivectomia","Gengivoplastia","Cirurgia periodontal",
+          "Enxerto gengival","Frenectomia","Sondagem periodontal",
+        ],
+      },
+      protese: {
+        label: "Prótese", icon: "🏗️", color: "#F59E0B",
+        procedures: [
+          "Prótese total superior","Prótese total inferior","Prótese parcial removível",
+          "Coroa provisória","Coroa definitiva - metalocerâmica","Coroa definitiva - porcelana pura",
+          "Faceta de porcelana","Faceta de resina","Prótese sobre implante",
+          "Moldagem para prótese","Prova de estrutura metálica","Ajuste oclusal",
+          "Reembasamento","Conserto de prótese",
+        ],
+      },
+      implantodontia: {
+        label: "Implantodontia", icon: "⚙️", color: "#EC4899",
+        procedures: [
+          "Instalação de implante","Reabertura de implante","Instalação de cicatrizador",
+          "Moldagem sobre implante","Instalação de pilar protético","Carga imediata",
+          "Enxerto ósseo","Levantamento de seio maxilar","Regeneração óssea guiada",
+        ],
+      },
+      dentistica: {
+        label: "Dentística", icon: "✨", color: "#06B6D4",
+        procedures: [
+          "Restauração resina composta - simples","Restauração resina composta - composta",
+          "Restauração resina composta - complexa","Restauração amálgama",
+          "Clareamento caseiro","Clareamento de consultório","Clareamento interno",
+          "Faceta direta em resina","Ajuste oclusal","Polimento de restauração",
+        ],
+      },
+      cirurgia: {
+        label: "Cirurgia", icon: "🔪", color: "#EF4444",
+        procedures: [
+          "Exodontia simples","Exodontia de terceiro molar","Exodontia de raiz residual",
+          "Cirurgia de dente incluso","Apicectomia","Biópsia","Remoção de cisto",
+          "Frenectomia lingual","Frenectomia labial","Sutura","Remoção de sutura",
+          "Drenagem de abscesso",
+        ],
+      },
+      odontopediatria: {
+        label: "Odontopediatria", icon: "👶", color: "#A78BFA",
+        procedures: [
+          "Aplicação de selante","Aplicação de flúor","Restauração em dente decíduo",
+          "Pulpotomia em decíduo","Pulpectomia em decíduo","Exodontia de decíduo",
+          "Mantenedor de espaço","Coroa de aço","Adequação do meio bucal",
+        ],
+      },
+    };
+
+    const TOOTH_NUMBERS = [
+      [18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28],
+      [48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38],
+    ];
+
+    const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    const formatDate = (d) => new Date(d).toLocaleDateString("pt-BR");
+    const formatDateISO = (d) => new Date(d).toISOString().split("T")[0];
+
+    const defaultAnamnesis = {
+      allergies: "", medications: "", diseases: "", surgeries: "", familyHistory: "",
+      smoker: "Não", drinker: "Não", pregnant: "Não", bloodPressure: "",
+      diabetes: "Não", heartDisease: "Não", hepatitis: "Não", hiv: "Não",
+      bleeding: "Não", healing: "Normal", anesthesiaReaction: "Não", observations: "",
+    };
+
+    // ─── SIGNATURE PAD COMPONENT ─────────────────────────────────────────
+    function SignaturePad({ value, onChange, label }) {
+      const canvasRef = useRef(null);
+      const [isDrawing, setIsDrawing] = useState(false);
+      const [hasDrawn, setHasDrawn] = useState(false);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = 160;
+        ctx.fillStyle = "#FAFBFC";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // draw baseline
+        ctx.strokeStyle = "#E2E8F0";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(20, 120);
+        ctx.lineTo(canvas.width - 20, 120);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // load existing signature
+        if (value) {
+          const img = new Image();
+          img.onload = () => {
+            ctx.fillStyle = "#FAFBFC";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            setHasDrawn(true);
+          };
+          img.src = value;
+        }
+      }, []);
+
+      const getPos = (e) => {
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const touch = e.touches ? e.touches[0] : e;
+        return {
+          x: (touch.clientX - rect.left) * (canvas.width / rect.width),
+          y: (touch.clientY - rect.top) * (canvas.height / rect.height),
+        };
+      };
+
+      const startDraw = (e) => {
+        e.preventDefault();
+        const ctx = canvasRef.current.getContext("2d");
+        const pos = getPos(e);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+        ctx.strokeStyle = "#1E293B";
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        setIsDrawing(true);
+        setHasDrawn(true);
+      };
+
+      const draw = (e) => {
+        e.preventDefault();
+        if (!isDrawing) return;
+        const ctx = canvasRef.current.getContext("2d");
+        const pos = getPos(e);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+      };
+
+      const endDraw = (e) => {
+        if (e) e.preventDefault();
+        setIsDrawing(false);
+        if (canvasRef.current && hasDrawn) {
+          onChange(canvasRef.current.toDataURL("image/png"));
+        }
+      };
+
+      const clearSignature = () => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#FAFBFC";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = "#E2E8F0";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(20, 120);
+        ctx.lineTo(canvas.width - 20, 120);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        setHasDrawn(false);
+        onChange("");
+      };
+
+      return (
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+            {label || "Assinatura do Paciente"}
+          </label>
+          <div style={{
+            position: "relative", borderRadius: 12, border: "1.5px solid #CBD5E1",
+            overflow: "hidden", background: "#FAFBFC",
+          }}>
+            <canvas
+              ref={canvasRef}
+              style={{ display: "block", width: "100%", height: 160, cursor: "crosshair", touchAction: "none" }}
+              onMouseDown={startDraw}
+              onMouseMove={draw}
+              onMouseUp={endDraw}
+              onMouseLeave={endDraw}
+              onTouchStart={startDraw}
+              onTouchMove={draw}
+              onTouchEnd={endDraw}
+            />
+            <div style={{
+              position: "absolute", bottom: 8, left: 12,
+              fontSize: 10, color: "#94A3B8", pointerEvents: "none",
+            }}>
+              ✍️ Assine acima da linha
+            </div>
+            <button onClick={clearSignature} style={{
+              position: "absolute", top: 8, right: 8,
+              background: "rgba(255,255,255,0.9)", border: "1px solid #E2E8F0",
+              borderRadius: 6, padding: "4px 10px", fontSize: 11, color: "#64748B",
+              cursor: "pointer", fontWeight: 600,
+            }}>
+              Limpar
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── REUSABLE UI COMPONENTS ──────────────────────────────────────────
+    function Modal({ isOpen, onClose, title, children, wide }) {
+      if (!isOpen) return null;
+      return (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 1000,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)",
+        }} onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "#fff", borderRadius: 16, width: wide ? "90%" : "min(560px, 92%)",
+            maxWidth: wide ? 900 : 560,
+            maxHeight: "88vh", overflow: "hidden", display: "flex", flexDirection: "column",
+            boxShadow: "0 25px 60px rgba(0,0,0,0.2)",
+          }}>
+            <div style={{
+              padding: "20px 24px", borderBottom: "1px solid #E2E8F0",
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              flexShrink: 0,
+            }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#0F172A" }}>{title}</h2>
+              <button onClick={onClose} style={{
+                background: "#F1F5F9", border: "none", borderRadius: 8, width: 32, height: 32,
+                cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#64748B",
+              }}>×</button>
+            </div>
+            <div style={{ padding: 24, overflowY: "auto", flex: 1 }}>{children}</div>
+          </div>
+        </div>
+      );
+    }
+
+    function Input({ label, ...props }) {
+      return (
+        <div style={{ marginBottom: 14 }}>
+          {label && <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 5 }}>{label}</label>}
+          <input {...props} style={{
+            width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1",
+            fontSize: 14, outline: "none", transition: "border 0.2s", boxSizing: "border-box",
+            background: "#F8FAFC", ...props.style,
+          }} />
+        </div>
+      );
+    }
+
+    function Textarea({ label, ...props }) {
+      return (
+        <div style={{ marginBottom: 14 }}>
+          {label && <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 5 }}>{label}</label>}
+          <textarea {...props} style={{
+            width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1",
+            fontSize: 14, outline: "none", minHeight: 70, resize: "vertical", boxSizing: "border-box",
+            background: "#F8FAFC", fontFamily: "inherit", ...props.style,
+          }} />
+        </div>
+      );
+    }
+
+    function Select({ label, options, ...props }) {
+      return (
+        <div style={{ marginBottom: 14 }}>
+          {label && <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 5 }}>{label}</label>}
+          <select {...props} style={{
+            width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1",
+            fontSize: 14, outline: "none", background: "#F8FAFC", boxSizing: "border-box", ...props.style,
+          }}>
+            {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+      );
+    }
+
+    function Badge({ text, color, onRemove }) {
+      return (
+        <span style={{
+          display: "inline-flex", alignItems: "center", gap: 4,
+          background: color + "18", color, border: `1px solid ${color}40`,
+          borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 600, margin: "2px 4px 2px 0",
+        }}>
+          {text}
+          {onRemove && <button onClick={onRemove} style={{
+            background: "none", border: "none", color, cursor: "pointer", fontSize: 14, padding: 0, marginLeft: 2,
+          }}>×</button>}
+        </span>
+      );
+    }
+
+    function ToothChart({ selected, onToggle }) {
+      return (
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 8 }}>Dentes Envolvidos</label>
+          <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 12, border: "1px solid #E2E8F0" }}>
+            {TOOTH_NUMBERS.map((row, ri) => (
+              <div key={ri} style={{
+                display: "flex", justifyContent: "center", gap: 2, marginBottom: ri === 0 ? 4 : 0,
+                flexWrap: "wrap",
+                borderBottom: ri === 0 ? "2px solid #CBD5E1" : "none", paddingBottom: ri === 0 ? 6 : 0,
+              }}>
+                {row.map(t => {
+                  const isSel = selected.includes(t);
+                  return (
+                    <button key={t} onClick={() => onToggle(t)} style={{
+                      width: 28, height: 28, borderRadius: 6, fontSize: 10, fontWeight: 700,
+                      border: isSel ? "2px solid #0EA5E9" : "1px solid #CBD5E1",
+                      background: isSel ? "#0EA5E9" : "#fff", color: isSel ? "#fff" : "#64748B",
+                      cursor: "pointer", transition: "all 0.15s", padding: 0,
+                    }}>
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── MAIN APP ────────────────────────────────────────────────────────
+    function App() {
+      const [patients, setPatients] = useState(() => {
+        try { return JSON.parse(localStorage.getItem("dental_patients")) || []; } catch { return []; }
+      });
+      const [view, setView] = useState("list");
+      const [selectedPatient, setSelectedPatient] = useState(null);
+      const [showNewPatient, setShowNewPatient] = useState(false);
+      const [showNewRecord, setShowNewRecord] = useState(false);
+      const [showAnamnesis, setShowAnamnesis] = useState(false);
+      const [searchTerm, setSearchTerm] = useState("");
+      const [editingAnamnesis, setEditingAnamnesis] = useState(false);
+      const [viewingSignature, setViewingSignature] = useState(null);
+
+      useEffect(() => {
+        localStorage.setItem("dental_patients", JSON.stringify(patients));
+      }, [patients]);
+
+      const [npForm, setNpForm] = useState({
+        name: "", birthDate: "", phone: "", email: "", cpf: "", address: "",
+      });
+
+      const [anamnesisForm, setAnamnesisForm] = useState({ ...defaultAnamnesis });
+
+      const [nrForm, setNrForm] = useState({
+        date: formatDateISO(new Date()), specialty: "", procedures: [],
+        teeth: [], notes: "", nextAppointment: "", value: "", signature: "",
+      });
+
+      const createPatient = () => {
+        if (!npForm.name.trim()) return;
+        const p = { id: generateId(), ...npForm, anamnesis: { ...defaultAnamnesis }, records: [], createdAt: new Date().toISOString() };
+        setPatients(prev => [p, ...prev]);
+        setNpForm({ name: "", birthDate: "", phone: "", email: "", cpf: "", address: "" });
+        setShowNewPatient(false);
+        setSelectedPatient(p);
+        setView("patient");
+      };
+
+      const saveAnamnesis = () => {
+        setPatients(prev => prev.map(p =>
+          p.id === selectedPatient.id ? { ...p, anamnesis: { ...anamnesisForm } } : p
+        ));
+        setSelectedPatient(prev => ({ ...prev, anamnesis: { ...anamnesisForm } }));
+        setEditingAnamnesis(false);
+      };
+
+      const addRecord = () => {
+        if (!nrForm.specialty || nrForm.procedures.length === 0) return;
+        const rec = { id: generateId(), ...nrForm, createdAt: new Date().toISOString() };
+        const updated = { ...selectedPatient, records: [rec, ...selectedPatient.records] };
+        setPatients(prev => prev.map(p => p.id === selectedPatient.id ? updated : p));
+        setSelectedPatient(updated);
+        setNrForm({ date: formatDateISO(new Date()), specialty: "", procedures: [], teeth: [], notes: "", nextAppointment: "", value: "", signature: "" });
+        setShowNewRecord(false);
+      };
+
+      const deleteRecord = (recId) => {
+        const updated = { ...selectedPatient, records: selectedPatient.records.filter(r => r.id !== recId) };
+        setPatients(prev => prev.map(p => p.id === selectedPatient.id ? updated : p));
+        setSelectedPatient(updated);
+      };
+
+      const deletePatient = (id) => {
+        setPatients(prev => prev.filter(p => p.id !== id));
+        setSelectedPatient(null);
+        setView("list");
+      };
+
+      const openPatient = (p) => { setSelectedPatient(p); setView("patient"); };
+
+      const filteredPatients = patients.filter(p =>
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (p.cpf && p.cpf.includes(searchTerm))
+      );
+
+      const specOpts = [{ value: "", label: "Selecione a especialidade..." }, ...Object.entries(SPECIALTIES).map(([k, v]) => ({ value: k, label: `${v.icon} ${v.label}` }))];
+
+      const toggleProcedure = (proc) => {
+        setNrForm(prev => ({
+          ...prev,
+          procedures: prev.procedures.includes(proc)
+            ? prev.procedures.filter(p => p !== proc)
+            : [...prev.procedures, proc],
+        }));
+      };
+
+      const toggleTooth = (t) => {
+        setNrForm(prev => ({
+          ...prev,
+          teeth: prev.teeth.includes(t) ? prev.teeth.filter(x => x !== t) : [...prev.teeth, t],
+        }));
+      };
+
+      // styles
+      const btnPrimary = {
+        background: "linear-gradient(135deg, #0EA5E9, #0284C7)", color: "#fff",
+        border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 14, fontWeight: 700,
+        cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6,
+      };
+      const btnSecondary = {
+        background: "#F1F5F9", color: "#475569", border: "1.5px solid #E2E8F0",
+        borderRadius: 10, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer",
+      };
+      const cardStyle = {
+        background: "#fff", borderRadius: 14, border: "1px solid #E2E8F0",
+        padding: 20, marginBottom: 12, cursor: "pointer", transition: "all 0.2s",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+      };
+
+      return (
+        <div>
+          {/* HEADER */}
+          <div style={{
+            background: "linear-gradient(135deg, #0F172A 0%, #1E3A5F 100%)",
+            color: "#fff", padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between",
+            position: "sticky", top: 0, zIndex: 100,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {view === "patient" && (
+                <button onClick={() => { setView("list"); setSelectedPatient(null); }} style={{
+                  background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 8, width: 36, height: 36,
+                  color: "#fff", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
+                }}>←</button>
+              )}
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.5 }}>🦷 OdontoClinic</div>
+                <div style={{ fontSize: 11, opacity: 0.6, fontWeight: 500 }}>Sistema de Fichas Clínicas</div>
+              </div>
+            </div>
+            {view === "list" && (
+              <button onClick={() => setShowNewPatient(true)} style={btnPrimary}>+ Novo Paciente</button>
+            )}
+          </div>
+
+          {/* ═══ PATIENT LIST ═══ */}
+          {view === "list" && (
+            <div style={{ padding: "20px 24px", maxWidth: 800, margin: "0 auto" }}>
+              <div style={{ marginBottom: 16 }}>
+                <input
+                  placeholder="🔍 Buscar paciente por nome ou CPF..."
+                  value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                  style={{
+                    width: "100%", padding: "12px 16px", borderRadius: 12, border: "1.5px solid #CBD5E1",
+                    fontSize: 14, outline: "none", background: "#fff", boxSizing: "border-box",
+                  }}
+                />
+              </div>
+              {filteredPatients.length === 0 && (
+                <div style={{ textAlign: "center", padding: 60, color: "#94A3B8" }}>
+                  <div style={{ fontSize: 48, marginBottom: 12 }}>🦷</div>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>Nenhum paciente cadastrado</div>
+                  <div style={{ fontSize: 13, marginTop: 4 }}>Clique em "Novo Paciente" para começar</div>
+                </div>
+              )}
+              {filteredPatients.map(p => (
+                <div key={p.id} onClick={() => openPatient(p)} style={cardStyle}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = "#0EA5E9"}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = "#E2E8F0"}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
+                    <div>
+                      <div style={{ fontSize: 16, fontWeight: 700 }}>{p.name}</div>
+                      <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>
+                        {p.phone && `📱 ${p.phone}`}{p.cpf && ` · CPF: ${p.cpf}`}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 11, color: "#94A3B8" }}>Cadastro: {formatDate(p.createdAt)}</div>
+                      <div style={{
+                        fontSize: 12, fontWeight: 700, color: "#0EA5E9", marginTop: 4,
+                        background: "#0EA5E910", padding: "2px 8px", borderRadius: 6,
+                      }}>{p.records.length} atendimento{p.records.length !== 1 ? "s" : ""}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ═══ PATIENT DETAIL ═══ */}
+          {view === "patient" && selectedPatient && (
+            <div style={{ padding: "20px 24px", maxWidth: 800, margin: "0 auto" }}>
+              {/* Info card */}
+              <div style={{ ...cardStyle, cursor: "default", background: "linear-gradient(135deg, #F0F9FF, #F8FAFC)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", flexWrap: "wrap", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 22, fontWeight: 800 }}>{selectedPatient.name}</div>
+                    <div style={{ fontSize: 13, color: "#64748B", marginTop: 4, lineHeight: 1.8 }}>
+                      {selectedPatient.birthDate && <span>🎂 {formatDate(selectedPatient.birthDate + "T12:00:00")} &nbsp;</span>}
+                      {selectedPatient.phone && <span>📱 {selectedPatient.phone} &nbsp;</span>}
+                      {selectedPatient.email && <span>✉️ {selectedPatient.email} &nbsp;</span>}
+                      {selectedPatient.cpf && <span>📋 CPF: {selectedPatient.cpf}</span>}
+                      {selectedPatient.address && <div>📍 {selectedPatient.address}</div>}
+                    </div>
+                  </div>
+                  <button onClick={() => {
+                    if (confirm("Excluir este paciente e todos os registros?")) deletePatient(selectedPatient.id);
+                  }} style={{ ...btnSecondary, fontSize: 12, padding: "6px 12px", color: "#EF4444", borderColor: "#FECACA" }}>
+                    Excluir Paciente
+                  </button>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+                <button onClick={() => {
+                  setAnamnesisForm({ ...defaultAnamnesis, ...selectedPatient.anamnesis });
+                  setShowAnamnesis(true);
+                  setEditingAnamnesis(false);
+                }} style={btnSecondary}>📋 Anamnese</button>
+                <button onClick={() => setShowNewRecord(true)} style={btnPrimary}>+ Novo Atendimento</button>
+              </div>
+
+              {/* Records */}
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12, color: "#334155" }}>
+                Histórico de Atendimentos ({selectedPatient.records.length})
+              </div>
+
+              {selectedPatient.records.length === 0 && (
+                <div style={{ textAlign: "center", padding: 40, color: "#94A3B8", background: "#fff", borderRadius: 14, border: "1px solid #E2E8F0" }}>
+                  <div style={{ fontSize: 13 }}>Nenhum atendimento registrado</div>
+                </div>
+              )}
+
+              {selectedPatient.records.map(rec => {
+                const spec = SPECIALTIES[rec.specialty];
+                return (
+                  <div key={rec.id} style={{ ...cardStyle, cursor: "default" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{
+                          background: spec?.color + "18", color: spec?.color,
+                          padding: "4px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                        }}>{spec?.icon} {spec?.label}</span>
+                        <span style={{ fontSize: 13, color: "#64748B", fontWeight: 600 }}>
+                          {formatDate(rec.date + "T12:00:00")}
+                        </span>
+                      </div>
+                      <button onClick={() => { if (confirm("Excluir este atendimento?")) deleteRecord(rec.id); }}
+                        style={{ background: "none", border: "none", color: "#CBD5E1", cursor: "pointer", fontSize: 16 }}>🗑️</button>
+                    </div>
+                    <div style={{ marginBottom: 6 }}>
+                      {rec.procedures.map(pr => (
+                        <Badge key={pr} text={pr} color={spec?.color || "#64748B"} />
+                      ))}
+                    </div>
+                    {rec.teeth?.length > 0 && (
+                      <div style={{ fontSize: 12, color: "#64748B", marginBottom: 4 }}>
+                        <strong>Dentes:</strong> {rec.teeth.sort((a, b) => a - b).join(", ")}
+                      </div>
+                    )}
+                    {rec.value && (
+                      <div style={{ fontSize: 12, color: "#64748B", marginBottom: 4 }}>
+                        <strong>Valor:</strong> R$ {rec.value}
+                      </div>
+                    )}
+                    {rec.notes && (
+                      <div style={{ fontSize: 13, color: "#475569", marginTop: 8, padding: "10px 12px", background: "#F8FAFC", borderRadius: 8, borderLeft: `3px solid ${spec?.color || "#CBD5E1"}` }}>
+                        {rec.notes}
+                      </div>
+                    )}
+                    {rec.nextAppointment && (
+                      <div style={{ fontSize: 12, color: "#0EA5E9", marginTop: 8, fontWeight: 600 }}>
+                        📅 Próxima consulta: {formatDate(rec.nextAppointment + "T12:00:00")}
+                      </div>
+                    )}
+                    {/* Signature display */}
+                    {rec.signature ? (
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed #E2E8F0" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 12, color: "#10B981", fontWeight: 600 }}>✅ Assinado pelo paciente</span>
+                          <button onClick={() => setViewingSignature(rec.signature)} style={{
+                            background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 6,
+                            padding: "4px 10px", fontSize: 11, color: "#16A34A", cursor: "pointer", fontWeight: 600,
+                          }}>Ver assinatura</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: 10, fontSize: 11, color: "#F59E0B", fontWeight: 600 }}>
+                        ⚠️ Sem assinatura
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ═══ NEW PATIENT MODAL ═══ */}
+          <Modal isOpen={showNewPatient} onClose={() => setShowNewPatient(false)} title="Novo Paciente">
+            <Input label="Nome Completo *" value={npForm.name} onChange={e => setNpForm({ ...npForm, name: e.target.value })} placeholder="Nome do paciente" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Input label="Data de Nascimento" type="date" value={npForm.birthDate} onChange={e => setNpForm({ ...npForm, birthDate: e.target.value })} />
+              <Input label="Telefone" value={npForm.phone} onChange={e => setNpForm({ ...npForm, phone: e.target.value })} placeholder="(00) 00000-0000" />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Input label="CPF" value={npForm.cpf} onChange={e => setNpForm({ ...npForm, cpf: e.target.value })} placeholder="000.000.000-00" />
+              <Input label="Email" type="email" value={npForm.email} onChange={e => setNpForm({ ...npForm, email: e.target.value })} placeholder="email@exemplo.com" />
+            </div>
+            <Input label="Endereço" value={npForm.address} onChange={e => setNpForm({ ...npForm, address: e.target.value })} placeholder="Endereço completo" />
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setShowNewPatient(false)} style={btnSecondary}>Cancelar</button>
+              <button onClick={createPatient} style={btnPrimary}>Cadastrar Paciente</button>
+            </div>
+          </Modal>
+
+          {/* ═══ ANAMNESIS MODAL ═══ */}
+          <Modal isOpen={showAnamnesis} onClose={() => setShowAnamnesis(false)} title="Anamnese Clínica" wide>
+            {!editingAnamnesis ? (
+              <div>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+                  <button onClick={() => setEditingAnamnesis(true)} style={btnPrimary}>✏️ Editar</button>
+                </div>
+                {[
+                  ["Alergias", anamnesisForm.allergies],
+                  ["Medicamentos em uso", anamnesisForm.medications],
+                  ["Doenças / Condições", anamnesisForm.diseases],
+                  ["Cirurgias anteriores", anamnesisForm.surgeries],
+                  ["Histórico familiar", anamnesisForm.familyHistory],
+                  ["Pressão arterial", anamnesisForm.bloodPressure],
+                ].map(([l, v]) => (
+                  <div key={l} style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>{l}</div>
+                    <div style={{ fontSize: 14, color: v ? "#0F172A" : "#CBD5E1", marginTop: 2 }}>{v || "Não informado"}</div>
+                  </div>
+                ))}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, marginTop: 12 }}>
+                  {[
+                    ["Tabagismo", anamnesisForm.smoker], ["Etilismo", anamnesisForm.drinker],
+                    ["Gestante", anamnesisForm.pregnant], ["Diabetes", anamnesisForm.diabetes],
+                    ["Cardiopatia", anamnesisForm.heartDisease], ["Hepatite", anamnesisForm.hepatitis],
+                    ["HIV", anamnesisForm.hiv], ["Sangramento", anamnesisForm.bleeding],
+                    ["Cicatrização", anamnesisForm.healing], ["Reação a anestesia", anamnesisForm.anesthesiaReaction],
+                  ].map(([l, v]) => (
+                    <div key={l} style={{
+                      padding: "8px 12px", borderRadius: 10,
+                      background: v === "Sim" || v === "Alterada" ? "#FEF2F2" : "#F0FDF4",
+                      border: `1px solid ${v === "Sim" || v === "Alterada" ? "#FECACA" : "#BBF7D0"}`,
+                    }}>
+                      <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>{l}</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: v === "Sim" || v === "Alterada" ? "#DC2626" : "#16A34A" }}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+                {anamnesisForm.observations && (
+                  <div style={{ marginTop: 16, padding: 14, background: "#FFFBEB", borderRadius: 10, border: "1px solid #FDE68A" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#92400E", marginBottom: 4 }}>Observações</div>
+                    <div style={{ fontSize: 14, color: "#78350F", whiteSpace: "pre-wrap" }}>{anamnesisForm.observations}</div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div>
+                <Textarea label="Alergias" value={anamnesisForm.allergies} onChange={e => setAnamnesisForm({ ...anamnesisForm, allergies: e.target.value })} placeholder="Descreva alergias conhecidas..." />
+                <Textarea label="Medicamentos em uso" value={anamnesisForm.medications} onChange={e => setAnamnesisForm({ ...anamnesisForm, medications: e.target.value })} placeholder="Liste medicamentos..." />
+                <Textarea label="Doenças / Condições" value={anamnesisForm.diseases} onChange={e => setAnamnesisForm({ ...anamnesisForm, diseases: e.target.value })} placeholder="Condições de saúde..." />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <Textarea label="Cirurgias anteriores" value={anamnesisForm.surgeries} onChange={e => setAnamnesisForm({ ...anamnesisForm, surgeries: e.target.value })} placeholder="Cirurgias realizadas..." />
+                  <Textarea label="Histórico familiar" value={anamnesisForm.familyHistory} onChange={e => setAnamnesisForm({ ...anamnesisForm, familyHistory: e.target.value })} placeholder="Doenças na família..." />
+                </div>
+                <Input label="Pressão Arterial" value={anamnesisForm.bloodPressure} onChange={e => setAnamnesisForm({ ...anamnesisForm, bloodPressure: e.target.value })} placeholder="Ex: 120x80 mmHg" />
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10, marginTop: 8 }}>
+                  {[
+                    ["smoker", "Tabagismo"], ["drinker", "Etilismo"], ["pregnant", "Gestante"],
+                    ["diabetes", "Diabetes"], ["heartDisease", "Cardiopatia"], ["hepatitis", "Hepatite"],
+                    ["hiv", "HIV"], ["bleeding", "Tendência a sangramento"], ["anesthesiaReaction", "Reação a anestesia"],
+                  ].map(([key, label]) => (
+                    <Select key={key} label={label} value={anamnesisForm[key]}
+                      onChange={e => setAnamnesisForm({ ...anamnesisForm, [key]: e.target.value })}
+                      options={[{ value: "Não", label: "Não" }, { value: "Sim", label: "Sim" }]}
+                    />
+                  ))}
+                  <Select label="Cicatrização" value={anamnesisForm.healing}
+                    onChange={e => setAnamnesisForm({ ...anamnesisForm, healing: e.target.value })}
+                    options={[{ value: "Normal", label: "Normal" }, { value: "Alterada", label: "Alterada" }]}
+                  />
+                </div>
+                <Textarea label="Observações Gerais" value={anamnesisForm.observations}
+                  onChange={e => setAnamnesisForm({ ...anamnesisForm, observations: e.target.value })}
+                  placeholder="Anotações adicionais sobre o paciente..."
+                  style={{ minHeight: 100 }}
+                />
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+                  <button onClick={() => setEditingAnamnesis(false)} style={btnSecondary}>Cancelar</button>
+                  <button onClick={saveAnamnesis} style={btnPrimary}>Salvar Anamnese</button>
+                </div>
+              </div>
+            )}
+          </Modal>
+
+          {/* ═══ NEW RECORD MODAL ═══ */}
+          <Modal isOpen={showNewRecord} onClose={() => setShowNewRecord(false)} title="Novo Atendimento" wide>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Input label="Data do Atendimento" type="date" value={nrForm.date} onChange={e => setNrForm({ ...nrForm, date: e.target.value })} />
+              <Select label="Especialidade *" value={nrForm.specialty}
+                onChange={e => setNrForm({ ...nrForm, specialty: e.target.value, procedures: [] })}
+                options={specOpts}
+              />
+            </div>
+
+            {nrForm.specialty && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 8 }}>
+                  Procedimentos Realizados *
+                </label>
+                <div style={{
+                  display: "flex", flexWrap: "wrap", gap: 6,
+                  background: "#F8FAFC", borderRadius: 12, padding: 12, border: "1px solid #E2E8F0",
+                  maxHeight: 200, overflowY: "auto",
+                }}>
+                  {SPECIALTIES[nrForm.specialty]?.procedures.map(proc => {
+                    const isSel = nrForm.procedures.includes(proc);
+                    const col = SPECIALTIES[nrForm.specialty]?.color;
+                    return (
+                      <button key={proc} onClick={() => toggleProcedure(proc)} style={{
+                        padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+                        border: isSel ? `2px solid ${col}` : "1.5px solid #CBD5E1",
+                        background: isSel ? col + "15" : "#fff",
+                        color: isSel ? col : "#475569",
+                        cursor: "pointer", transition: "all 0.15s",
+                      }}>
+                        {isSel ? "✓ " : ""}{proc}
+                      </button>
+                    );
+                  })}
+                </div>
+                {nrForm.procedures.length > 0 && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#64748B" }}>
+                    {nrForm.procedures.length} procedimento(s) selecionado(s)
+                  </div>
+                )}
+              </div>
+            )}
+
+            <ToothChart selected={nrForm.teeth} onToggle={toggleTooth} />
+            <Input label="Valor (R$)" type="number" value={nrForm.value} onChange={e => setNrForm({ ...nrForm, value: e.target.value })} placeholder="0,00" />
+            <Textarea label="Observações do Atendimento" value={nrForm.notes}
+              onChange={e => setNrForm({ ...nrForm, notes: e.target.value })}
+              placeholder="Descreva detalhes do procedimento, observações clínicas, etc..."
+              style={{ minHeight: 90 }}
+            />
+            <Input label="Próxima Consulta" type="date" value={nrForm.nextAppointment}
+              onChange={e => setNrForm({ ...nrForm, nextAppointment: e.target.value })} />
+
+            {/* ── SIGNATURE PAD ── */}
+            <div style={{
+              marginTop: 8, paddingTop: 16, borderTop: "2px dashed #E2E8F0",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <span style={{ fontSize: 18 }}>✍️</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: "#334155" }}>Assinatura do Paciente</span>
+              </div>
+              <p style={{ fontSize: 12, color: "#64748B", marginBottom: 10, lineHeight: 1.5 }}>
+                O paciente declara estar ciente dos procedimentos realizados e autoriza o tratamento descrito acima.
+              </p>
+              <SignaturePad
+                value={nrForm.signature}
+                onChange={(sig) => setNrForm({ ...nrForm, signature: sig })}
+                label="Desenhe a assinatura abaixo"
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setShowNewRecord(false)} style={btnSecondary}>Cancelar</button>
+              <button onClick={addRecord} style={{
+                ...btnPrimary,
+                opacity: (!nrForm.specialty || nrForm.procedures.length === 0) ? 0.5 : 1,
+              }}>Registrar Atendimento</button>
+            </div>
+          </Modal>
+
+          {/* ═══ VIEW SIGNATURE MODAL ═══ */}
+          <Modal isOpen={!!viewingSignature} onClose={() => setViewingSignature(null)} title="Assinatura do Paciente">
+            {viewingSignature && (
+              <div style={{ textAlign: "center" }}>
+                <div style={{
+                  background: "#FAFBFC", borderRadius: 12, border: "1px solid #E2E8F0",
+                  padding: 16, display: "inline-block",
+                }}>
+                  <img src={viewingSignature} alt="Assinatura" style={{ maxWidth: "100%", height: "auto" }} />
+                </div>
+                <p style={{ fontSize: 12, color: "#64748B", marginTop: 12 }}>
+                  Assinatura capturada digitalmente no momento do atendimento.
+                </p>
+              </div>
+            )}
+          </Modal>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
