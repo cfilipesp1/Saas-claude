@@ -32,7 +32,7 @@
     const ROLES = { ADMIN: "admin", DENTISTA: "dentista", ORTO: "orto" };
     const ROLE_LABELS = { admin: "Administrador", dentista: "Dentista", orto: "Ortodontista" };
     const RECORD_TYPES = { ORTODONTIA: "ORTODONTIA", GERAL: "GERAL" };
-    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
     const ALLOWED_FILE_TYPES = ["image/jpeg","image/png","image/webp","image/gif","application/pdf",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
 
@@ -142,13 +142,23 @@
       bleeding: "Não", healing: "Normal", anesthesiaReaction: "Não", observations: "",
     };
 
+    // Migrate old inline base64 data to IndexedDB
+    const migrateFileToIDB = (item) => {
+      if (item && item.data && typeof item.data === "string" && item.data.startsWith("data:")) {
+        FileDB.put(item.id, item.data).catch(() => {});
+        const { data, ...meta } = item;
+        return meta;
+      }
+      return item;
+    };
+
     const migratePatient = (p) => ({
       ...p,
       codigo: p.codigo || "",
       responsavel_clinico_id: p.responsavel_clinico_id || "",
       responsavel_orto_id: p.responsavel_orto_id || "",
       responsavelHistory: p.responsavelHistory || [],
-      documents: p.documents || [],
+      documents: (p.documents || []).map(migrateFileToIDB),
       records: (p.records || []).map(r => ({
         ...r,
         tipo_atendimento: r.tipo_atendimento || (r.specialty === "ortodontia" ? "ORTODONTIA" : "GERAL"),
@@ -156,7 +166,7 @@
         dentista_responsavel_no_momento_id: r.dentista_responsavel_no_momento_id || "",
         atendimento_fora_da_responsabilidade: r.atendimento_fora_da_responsabilidade || false,
         motivo_fora: r.motivo_fora || "",
-        photos: r.photos || [],
+        photos: (r.photos || []).map(migrateFileToIDB),
         wireInfo: r.wireInfo || { material: "", format: "", gauge: "" },
       })),
     });
@@ -165,6 +175,25 @@
       id: "admin1", name: "Administrador", login: "admin", password: "admin123",
       role: "admin", specialty: "", active: true, createdAt: new Date().toISOString(),
     };
+
+    // ─── INDEXEDDB FILE STORAGE ─────────────────────────────────────────
+    // Files are stored in IndexedDB to avoid localStorage size limits.
+    // Only metadata (id, name, type, size) is kept in state/localStorage.
+    const FileDB = (() => {
+      const DB_NAME = "dental_files_db";
+      const STORE = "files";
+      const open = () => new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      return {
+        put: async (id, data) => { const db = await open(); return new Promise((res, rej) => { const tx = db.transaction(STORE, "readwrite"); tx.objectStore(STORE).put(data, id); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); },
+        get: async (id) => { const db = await open(); return new Promise((res, rej) => { const tx = db.transaction(STORE, "readonly"); const req = tx.objectStore(STORE).get(id); req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); }); },
+        del: async (id) => { const db = await open(); return new Promise((res, rej) => { const tx = db.transaction(STORE, "readwrite"); tx.objectStore(STORE).delete(id); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); },
+      };
+    })();
 
     // ─── SIGNATURE PAD ──────────────────────────────────────────────────
     function SignaturePad({ value, onChange, label }) {
@@ -258,6 +287,18 @@
       </div>);
     }
 
+    // ─── FILE THUMBNAIL (lazy loads from IndexedDB) ────────────────────
+    function FileThumb({ fileId, cache, loadFn, type, name, onClick, style }) {
+      const [loaded, setLoaded] = useState(false);
+      useEffect(() => { if (fileId && !cache[fileId]) { loadFn(fileId); } }, [fileId]);
+      const src = cache[fileId];
+      if (type?.startsWith("image/")) {
+        return src ? <img src={src} alt={name} onClick={onClick} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", cursor:onClick?"pointer":"default", ...style }} />
+          : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", background:"#F1F5F9", fontSize:10, color:"#94A3B8", ...style }}>Carregando...</div>;
+      }
+      return <div onClick={onClick} style={{ width:"100%", height:"100%", background:"#F8FAFC", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, cursor:"pointer", ...style }}>{fileIcon(type)}</div>;
+    }
+
     // ─── MAIN APP ────────────────────────────────────────────────────────
     function App() {
       // ── Auth State ──
@@ -284,6 +325,7 @@
       const [searchTerm, setSearchTerm] = useState("");
       const [patientTab, setPatientTab] = useState("orto");
       const [auditFilter, setAuditFilter] = useState("");
+      const [docDateFilter, setDocDateFilter] = useState("");
 
       // ── Modals ──
       const [showNewPatient, setShowNewPatient] = useState(false);
@@ -312,11 +354,12 @@
       const photoInputRef = useRef(null);
       const docInputRef = useRef(null);
 
-      // ── Persist ──
-      useEffect(() => { localStorage.setItem("dental_users", JSON.stringify(users)); }, [users]);
-      useEffect(() => { localStorage.setItem("dental_patients", JSON.stringify(patients)); }, [patients]);
-      useEffect(() => { localStorage.setItem("dental_audit", JSON.stringify(auditLogs)); }, [auditLogs]);
-      useEffect(() => { if (currentUser) localStorage.setItem("dental_session", JSON.stringify(currentUser)); else localStorage.removeItem("dental_session"); }, [currentUser]);
+      // ── Persist (with error handling to prevent UI freeze) ──
+      const safeSave = (key, data) => { try { localStorage.setItem(key, JSON.stringify(data)); } catch(e) { console.warn("localStorage save failed for", key, e.message); } };
+      useEffect(() => { safeSave("dental_users", users); }, [users]);
+      useEffect(() => { safeSave("dental_patients", patients); }, [patients]);
+      useEffect(() => { safeSave("dental_audit", auditLogs); }, [auditLogs]);
+      useEffect(() => { if (currentUser) safeSave("dental_session", currentUser); else localStorage.removeItem("dental_session"); }, [currentUser]);
 
       // ── Helpers ──
       const getUserName = (id) => { const u = users.find(x => x.id === id); return u ? u.name : "—"; };
@@ -437,12 +480,29 @@
         addAudit("EXCLUIR_ATENDIMENTO","atendimento",recId,selectedPatient.name,"");
       };
 
+      // ── File blob cache (loaded from IndexedDB on demand) ──
+      const [fileCache, setFileCache] = useState({});
+      const loadFile = useCallback(async (fileId) => {
+        if (!fileId) return;
+        setFileCache(prev => { if (prev[fileId]) return prev; return prev; });
+        try {
+          const data = await FileDB.get(fileId);
+          if (data) setFileCache(prev => ({...prev, [fileId]: data}));
+        } catch(e) { console.warn("FileDB load error", e); }
+      }, []);
+
       // ── Photos ──
       const handlePhotoUpload = (e) => {
         Array.from(e.target.files).forEach(file => {
-          if (file.size > MAX_FILE_SIZE) { alert(`Arquivo ${file.name} excede 10MB.`); return; }
+          if (file.size > MAX_FILE_SIZE) { alert(`Arquivo ${file.name} excede 50MB.`); return; }
+          const fid = generateId();
           const reader = new FileReader();
-          reader.onload = (ev) => setNrForm(prev => ({...prev, photos:[...prev.photos, {id:generateId(), name:file.name, type:file.type, size:file.size, data:ev.target.result}]}));
+          reader.onload = async (ev) => {
+            const dataUrl = ev.target.result;
+            try { await FileDB.put(fid, dataUrl); } catch(err) { alert("Erro ao salvar arquivo: " + err.message); return; }
+            setFileCache(prev => ({...prev, [fid]: dataUrl}));
+            setNrForm(prev => ({...prev, photos:[...prev.photos, {id:fid, name:file.name, type:file.type, size:file.size}]}));
+          };
           reader.readAsDataURL(file);
         });
         if (photoInputRef.current) photoInputRef.current.value = "";
@@ -451,11 +511,15 @@
       // ── Patient Documents ──
       const handleDocUpload = (e) => {
         Array.from(e.target.files).forEach(file => {
-          if (file.size > MAX_FILE_SIZE) { alert(`Arquivo ${file.name} excede 10MB.`); return; }
+          if (file.size > MAX_FILE_SIZE) { alert(`Arquivo ${file.name} excede 50MB.`); return; }
           if (!ALLOWED_FILE_TYPES.some(t => file.type === t || file.type.startsWith("image/"))) { alert(`Tipo não permitido: ${file.type}`); return; }
+          const fid = generateId();
           const reader = new FileReader();
-          reader.onload = (ev) => {
-            const doc = { id:generateId(), name:file.name, type:file.type, size:file.size, data:ev.target.result, uploadedBy:currentUser.id, uploadedByName:currentUser.name, uploadedAt:new Date().toISOString() };
+          reader.onload = async (ev) => {
+            const dataUrl = ev.target.result;
+            try { await FileDB.put(fid, dataUrl); } catch(err) { alert("Erro ao salvar arquivo: " + err.message); return; }
+            setFileCache(prev => ({...prev, [fid]: dataUrl}));
+            const doc = { id:fid, name:file.name, type:file.type, size:file.size, uploadedBy:currentUser.id, uploadedByName:currentUser.name, uploadedAt:new Date().toISOString() };
             const updated = { ...selectedPatient, documents:[doc, ...selectedPatient.documents] };
             setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
             setSelectedPatient(updated);
@@ -466,7 +530,9 @@
         if (docInputRef.current) docInputRef.current.value = "";
       };
 
-      const deleteDoc = (docId) => {
+      const deleteDoc = async (docId) => {
+        try { await FileDB.del(docId); } catch(e) {}
+        setFileCache(prev => { const n={...prev}; delete n[docId]; return n; });
         const updated = { ...selectedPatient, documents: selectedPatient.documents.filter(d => d.id !== docId) };
         setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
         setSelectedPatient(updated);
@@ -649,20 +715,34 @@
               {/* Patient Documents */}
               {selectedPatient.documents?.length > 0 && (
                 <div style={{ ...cardStyle, marginBottom:16 }}>
-                  <div style={{ fontSize:14, fontWeight:700, marginBottom:10, color:"#334155" }}>Documentos do Paciente ({selectedPatient.documents.length})</div>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, flexWrap:"wrap", gap:8 }}>
+                    <div style={{ fontSize:14, fontWeight:700, color:"#334155" }}>Documentos do Paciente ({selectedPatient.documents.length})</div>
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      <label style={{ fontSize:11, color:"#64748B", fontWeight:600 }}>Data:</label>
+                      <input type="date" value={docDateFilter} onChange={e => setDocDateFilter(e.target.value)}
+                        style={{ padding:"4px 8px", borderRadius:8, border:"1px solid #CBD5E1", fontSize:12, outline:"none", background:"#F8FAFC" }} />
+                      {docDateFilter && <button onClick={() => setDocDateFilter("")} style={{ background:"none", border:"none", color:"#94A3B8", cursor:"pointer", fontSize:14, padding:0 }}>×</button>}
+                    </div>
+                  </div>
                   <div style={{ display:"flex", flexWrap:"wrap", gap:10 }}>
-                    {selectedPatient.documents.map(doc => (
+                    {selectedPatient.documents
+                      .filter(doc => !docDateFilter || (doc.uploadedAt && doc.uploadedAt.startsWith(docDateFilter)))
+                      .map(doc => (
                       <div key={doc.id} style={{ border:"1px solid #E2E8F0", borderRadius:10, padding:10, width:140, position:"relative" }}>
-                        {doc.type?.startsWith("image/") ? (
-                          <img src={doc.data} alt={doc.name} onClick={() => setViewingPhoto(doc.data)} style={{ width:"100%", height:80, objectFit:"cover", borderRadius:6, cursor:"pointer", display:"block" }} />
-                        ) : (
-                          <div onClick={() => { const a=document.createElement("a"); a.href=doc.data; a.download=doc.name; a.click(); }} style={{ width:"100%", height:80, background:"#F8FAFC", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, cursor:"pointer" }}>{fileIcon(doc.type)}</div>
-                        )}
+                        <div style={{ width:"100%", height:80, borderRadius:6, overflow:"hidden" }}>
+                          <FileThumb fileId={doc.id} cache={fileCache} loadFn={loadFile} type={doc.type} name={doc.name}
+                            onClick={async () => { const d = fileCache[doc.id] || await FileDB.get(doc.id); if (d) { if (doc.type?.startsWith("image/")) setViewingPhoto(d); else { const a=document.createElement("a"); a.href=d; a.download=doc.name; a.click(); } } }}
+                            style={{ borderRadius:6 }} />
+                        </div>
                         <div style={{ fontSize:10, color:"#64748B", marginTop:6, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={doc.name}>{doc.name}</div>
                         <div style={{ fontSize:9, color:"#94A3B8" }}>{formatSize(doc.size)} · {doc.uploadedByName}</div>
+                        {doc.uploadedAt && <div style={{ fontSize:9, color:"#94A3B8" }}>{formatDate(doc.uploadedAt)}</div>}
                         {isAdmin && <button onClick={() => deleteDoc(doc.id)} style={{ position:"absolute", top:4, right:4, background:"rgba(239,68,68,0.9)", border:"none", borderRadius:"50%", width:18, height:18, color:"#fff", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>×</button>}
                       </div>
                     ))}
+                    {selectedPatient.documents.length > 0 && docDateFilter && selectedPatient.documents.filter(doc => doc.uploadedAt && doc.uploadedAt.startsWith(docDateFilter)).length === 0 && (
+                      <div style={{ fontSize:12, color:"#94A3B8", padding:16 }}>Nenhum documento nesta data.</div>
+                    )}
                   </div>
                 </div>
               )}
@@ -722,8 +802,10 @@
                           <div style={{ fontSize:12, color:"#64748B", fontWeight:600, marginBottom:6 }}>Fotos ({rec.photos.length})</div>
                           <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
                             {rec.photos.map(ph => (
-                              <div key={ph.id} onClick={() => setViewingPhoto(ph.data)} style={{ width:56, height:56, borderRadius:8, overflow:"hidden", border:"1px solid #E2E8F0", cursor:"pointer" }}>
-                                <img src={ph.data} alt={ph.name} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
+                              <div key={ph.id} style={{ width:56, height:56, borderRadius:8, overflow:"hidden", border:"1px solid #E2E8F0", cursor:"pointer" }}>
+                                <FileThumb fileId={ph.id} cache={fileCache} loadFn={loadFile} type={ph.type || "image/jpeg"} name={ph.name}
+                                  onClick={async () => { const d = fileCache[ph.id] || await FileDB.get(ph.id); if (d) setViewingPhoto(d); }}
+                                  style={{ borderRadius:8 }} />
                               </div>
                             ))}
                           </div>
@@ -916,8 +998,8 @@
                     <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginTop:8 }}>
                       {nrForm.photos.map(ph => (
                         <div key={ph.id} style={{ position:"relative", width:80, height:80, borderRadius:10, overflow:"hidden", border:"1.5px solid #CBD5E1" }}>
-                          <img src={ph.data} alt={ph.name} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
-                          <button onClick={() => setNrForm(prev => ({...prev, photos:prev.photos.filter(p=>p.id!==ph.id)}))} style={{ position:"absolute", top:2, right:2, background:"rgba(239,68,68,0.9)", border:"none", borderRadius:"50%", width:18, height:18, color:"#fff", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>×</button>
+                          <FileThumb fileId={ph.id} cache={fileCache} loadFn={loadFile} type={ph.type || "image/jpeg"} name={ph.name} style={{ borderRadius:10 }} />
+                          <button onClick={async () => { try { await FileDB.del(ph.id); } catch(e) {} setFileCache(prev => { const n={...prev}; delete n[ph.id]; return n; }); setNrForm(prev => ({...prev, photos:prev.photos.filter(p=>p.id!==ph.id)})); }} style={{ position:"absolute", top:2, right:2, background:"rgba(239,68,68,0.9)", border:"none", borderRadius:"50%", width:18, height:18, color:"#fff", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>×</button>
                         </div>
                       ))}
                     </div>
