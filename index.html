@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OdontoClinic — Fichas Clínicas</title>
+  <title>O+ Fichas — Fichas Clínicas</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -394,7 +394,10 @@
       const [nrForm, setNrForm] = useState({
         date: formatDateISO(new Date()), specialty: "", procedures: [],
         teeth: [], notes: "", nextAppointment: "", value: "", signature: "",
+        photos: [], wireInfo: { material: "", format: "", gauge: "" },
       });
+      const [viewingPhoto, setViewingPhoto] = useState(null);
+      const photoInputRef = useRef(null);
 
       const createPatient = () => {
         if (!npForm.name.trim()) return;
@@ -420,7 +423,7 @@
         const updated = { ...selectedPatient, records: [rec, ...selectedPatient.records] };
         setPatients(prev => prev.map(p => p.id === selectedPatient.id ? updated : p));
         setSelectedPatient(updated);
-        setNrForm({ date: formatDateISO(new Date()), specialty: "", procedures: [], teeth: [], notes: "", nextAppointment: "", value: "", signature: "" });
+        setNrForm({ date: formatDateISO(new Date()), specialty: "", procedures: [], teeth: [], notes: "", nextAppointment: "", value: "", signature: "", photos: [], wireInfo: { material: "", format: "", gauge: "" } });
         setShowNewRecord(false);
       };
 
@@ -461,6 +464,28 @@
         }));
       };
 
+      const handlePhotoUpload = (e) => {
+        const files = Array.from(e.target.files);
+        files.forEach(file => {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            setNrForm(prev => ({ ...prev, photos: [...prev.photos, { id: generateId(), name: file.name, data: ev.target.result }] }));
+          };
+          reader.readAsDataURL(file);
+        });
+        if (photoInputRef.current) photoInputRef.current.value = "";
+      };
+
+      const removePhoto = (photoId) => {
+        setNrForm(prev => ({ ...prev, photos: prev.photos.filter(p => p.id !== photoId) }));
+      };
+
+      const WIRE_MATERIALS = ["Nitinol", "Aço"];
+      const WIRE_FORMATS = ["Redondo", "Quadrado"];
+      const WIRE_GAUGES = ["012", "014", "016", "018", "020", "16x16", "16x22", "17x25", "19x25", "21x25"];
+
+      const needsWireInfo = nrForm.specialty === "ortodontia" && nrForm.procedures.length > 0;
+
       // styles
       const btnPrimary = {
         background: "linear-gradient(135deg, #0EA5E9, #0284C7)", color: "#fff",
@@ -493,7 +518,7 @@
                 }}>←</button>
               )}
               <div>
-                <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.5 }}>🦷 OdontoClinic</div>
+                <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.5 }}>🦷 O+ Fichas</div>
                 <div style={{ fontSize: 11, opacity: 0.6, fontWeight: 500 }}>Sistema de Fichas Clínicas</div>
               </div>
             </div>
@@ -626,6 +651,31 @@
                     {rec.notes && (
                       <div style={{ fontSize: 13, color: "#475569", marginTop: 8, padding: "10px 12px", background: "#F8FAFC", borderRadius: 8, borderLeft: `3px solid ${spec?.color || "#CBD5E1"}` }}>
                         {rec.notes}
+                      </div>
+                    )}
+                    {rec.wireInfo && (rec.wireInfo.material || rec.wireInfo.format || rec.wireInfo.gauge) && (
+                      <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 12, color: "#0369A1", fontWeight: 600 }}>🔩 Fio:</span>
+                        {rec.wireInfo.material && <Badge text={rec.wireInfo.material} color="#0EA5E9" />}
+                        {rec.wireInfo.format && <Badge text={rec.wireInfo.format} color="#0EA5E9" />}
+                        {rec.wireInfo.gauge && <Badge text={rec.wireInfo.gauge} color="#0EA5E9" />}
+                      </div>
+                    )}
+                    {rec.photos?.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontSize: 12, color: "#64748B", fontWeight: 600, marginBottom: 6 }}>📷 Fotos Clínicas ({rec.photos.length})</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                          {rec.photos.map(photo => (
+                            <div key={photo.id} onClick={() => setViewingPhoto(photo.data)} style={{
+                              width: 64, height: 64, borderRadius: 8, overflow: "hidden",
+                              border: "1px solid #E2E8F0", cursor: "pointer",
+                            }}>
+                              <img src={photo.data} alt={photo.name} style={{
+                                width: "100%", height: "100%", objectFit: "cover", display: "block",
+                              }} />
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                     {rec.nextAppointment && (
@@ -801,6 +851,33 @@
               </div>
             )}
 
+            {/* ── WIRE INFO (Ortodontia only) ── */}
+            {needsWireInfo && (
+              <div style={{
+                marginBottom: 14, padding: 14, background: "#F0F9FF", borderRadius: 12,
+                border: "1.5px solid #BAE6FD",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <span style={{ fontSize: 16 }}>🔩</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#0369A1" }}>Informações do Fio Ortodôntico</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  <Select label="Material do Fio" value={nrForm.wireInfo.material}
+                    onChange={e => setNrForm({ ...nrForm, wireInfo: { ...nrForm.wireInfo, material: e.target.value } })}
+                    options={[{ value: "", label: "Selecione..." }, ...WIRE_MATERIALS.map(m => ({ value: m, label: m }))]}
+                  />
+                  <Select label="Formato do Fio" value={nrForm.wireInfo.format}
+                    onChange={e => setNrForm({ ...nrForm, wireInfo: { ...nrForm.wireInfo, format: e.target.value } })}
+                    options={[{ value: "", label: "Selecione..." }, ...WIRE_FORMATS.map(f => ({ value: f, label: f }))]}
+                  />
+                  <Select label="Calibre do Fio" value={nrForm.wireInfo.gauge}
+                    onChange={e => setNrForm({ ...nrForm, wireInfo: { ...nrForm.wireInfo, gauge: e.target.value } })}
+                    options={[{ value: "", label: "Selecione..." }, ...WIRE_GAUGES.map(g => ({ value: g, label: g }))]}
+                  />
+                </div>
+              </div>
+            )}
+
             <ToothChart selected={nrForm.teeth} onToggle={toggleTooth} />
             <Input label="Valor (R$)" type="number" value={nrForm.value} onChange={e => setNrForm({ ...nrForm, value: e.target.value })} placeholder="0,00" />
             <Textarea label="Observações do Atendimento" value={nrForm.notes}
@@ -810,6 +887,50 @@
             />
             <Input label="Próxima Consulta" type="date" value={nrForm.nextAppointment}
               onChange={e => setNrForm({ ...nrForm, nextAppointment: e.target.value })} />
+
+            {/* ── CLINICAL PHOTOS ── */}
+            <div style={{
+              marginTop: 8, paddingTop: 16, borderTop: "2px dashed #E2E8F0",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <span style={{ fontSize: 18 }}>📷</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: "#334155" }}>Fotos Clínicas</span>
+              </div>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handlePhotoUpload}
+                style={{ display: "none" }}
+              />
+              <button onClick={() => photoInputRef.current?.click()} style={{
+                ...btnSecondary, fontSize: 13, padding: "8px 16px", marginBottom: 10,
+              }}>
+                📎 Anexar Foto
+              </button>
+              {nrForm.photos.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8 }}>
+                  {nrForm.photos.map(photo => (
+                    <div key={photo.id} style={{
+                      position: "relative", width: 90, height: 90, borderRadius: 10,
+                      overflow: "hidden", border: "1.5px solid #CBD5E1",
+                    }}>
+                      <img src={photo.data} alt={photo.name} style={{
+                        width: "100%", height: "100%", objectFit: "cover", display: "block",
+                      }} />
+                      <button onClick={() => removePhoto(photo.id)} style={{
+                        position: "absolute", top: 3, right: 3,
+                        background: "rgba(239,68,68,0.9)", border: "none", borderRadius: "50%",
+                        width: 20, height: 20, color: "#fff", fontSize: 12,
+                        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                        padding: 0,
+                      }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* ── SIGNATURE PAD ── */}
             <div style={{
@@ -851,6 +972,18 @@
                 <p style={{ fontSize: 12, color: "#64748B", marginTop: 12 }}>
                   Assinatura capturada digitalmente no momento do atendimento.
                 </p>
+              </div>
+            )}
+          </Modal>
+
+          {/* ═══ VIEW PHOTO MODAL ═══ */}
+          <Modal isOpen={!!viewingPhoto} onClose={() => setViewingPhoto(null)} title="Foto Clínica">
+            {viewingPhoto && (
+              <div style={{ textAlign: "center" }}>
+                <img src={viewingPhoto} alt="Foto clínica" style={{
+                  maxWidth: "100%", maxHeight: "70vh", borderRadius: 12,
+                  border: "1px solid #E2E8F0",
+                }} />
               </div>
             )}
           </Modal>
