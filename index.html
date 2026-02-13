@@ -144,6 +144,7 @@
 
     const migratePatient = (p) => ({
       ...p,
+      codigo: p.codigo || "",
       responsavel_clinico_id: p.responsavel_clinico_id || "",
       responsavel_orto_id: p.responsavel_orto_id || "",
       responsavelHistory: p.responsavelHistory || [],
@@ -297,7 +298,7 @@
       const [showUploadDoc, setShowUploadDoc] = useState(false);
 
       // ── Forms ──
-      const [npForm, setNpForm] = useState({ name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
+      const [npForm, setNpForm] = useState({ codigo:"", name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
       const emptyNrForm = { date:formatDateISO(new Date()), tipo_atendimento:"", specialty:"", procedures:[], teeth:[], notes:"", nextAppointment:"", value:"", signature:"", photos:[], wireInfo:{material:"",format:"",gauge:""} };
       const [nrForm, setNrForm] = useState({...emptyNrForm});
       const [anamnesisForm, setAnamnesisForm] = useState({...defaultAnamnesis});
@@ -339,10 +340,10 @@
 
       // ── Patient CRUD ──
       const createPatient = () => {
-        if (!npForm.name.trim() || !npForm.responsavel_clinico_id || !npForm.responsavel_orto_id) return;
+        if (!npForm.name.trim() || (!npForm.responsavel_clinico_id && !npForm.responsavel_orto_id)) return;
         const p = { id:generateId(), ...npForm, anamnesis:{...defaultAnamnesis}, records:[], documents:[], responsavelHistory:[], createdAt:new Date().toISOString() };
         setPatients(prev => [p, ...prev]);
-        setNpForm({ name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
+        setNpForm({ codigo:"", name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
         setShowNewPatient(false);
         setSelectedPatient(p);
         setView("patient");
@@ -492,7 +493,7 @@
       const toggleProcedure = (proc) => setNrForm(prev => ({...prev, procedures: prev.procedures.includes(proc) ? prev.procedures.filter(p=>p!==proc) : [...prev.procedures, proc]}));
       const toggleTooth = (t) => setNrForm(prev => ({...prev, teeth: prev.teeth.includes(t) ? prev.teeth.filter(x=>x!==t) : [...prev.teeth, t]}));
 
-      const filteredPatients = patients.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || (p.cpf && p.cpf.includes(searchTerm)));
+      const filteredPatients = patients.filter(p => { const s = searchTerm.toLowerCase(); return p.name.toLowerCase().includes(s) || (p.cpf && p.cpf.includes(searchTerm)) || (p.phone && p.phone.includes(searchTerm)) || (p.codigo && p.codigo.toLowerCase().includes(s)); });
 
       const needsWireInfo = nrForm.tipo_atendimento === "ORTODONTIA" && nrForm.procedures.length > 0;
       const geralSpecOpts = [{ value:"", label:"Selecione..." }, ...Object.entries(SPECIALTIES).filter(([k])=>k!=="ortodontia").map(([k,v])=>({ value:k, label:`${v.icon} ${v.label}` }))];
@@ -564,7 +565,7 @@
           {view === "list" && (
             <div style={{ padding:"20px 24px", maxWidth:800, margin:"0 auto" }}>
               <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
-                <input placeholder="Buscar paciente por nome ou CPF..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                <input placeholder="Buscar por código, nome, CPF ou telefone..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
                   style={{ flex:1, minWidth:200, padding:"12px 16px", borderRadius:12, border:"1.5px solid #CBD5E1", fontSize:14, outline:"none", background:"#fff", boxSizing:"border-box" }} />
                 <button onClick={() => setShowNewPatient(true)} style={btnPrimary}>+ Novo Paciente</button>
               </div>
@@ -580,7 +581,10 @@
                   onMouseEnter={e => e.currentTarget.style.borderColor="#0EA5E9"} onMouseLeave={e => e.currentTarget.style.borderColor="#E2E8F0"}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
                     <div>
-                      <div style={{ fontSize:16, fontWeight:700 }}>{p.name}</div>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        {p.codigo && <span style={{ fontSize:11, fontWeight:700, color:"#0EA5E9", background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:6, padding:"2px 8px" }}>{p.codigo}</span>}
+                        <span style={{ fontSize:16, fontWeight:700 }}>{p.name}</span>
+                      </div>
                       <div style={{ fontSize:12, color:"#64748B", marginTop:4 }}>
                         {p.phone && `${p.phone}`}{p.cpf && ` · CPF: ${p.cpf}`}
                       </div>
@@ -605,7 +609,10 @@
               <div style={{ ...cardStyle, background:"linear-gradient(135deg,#F0F9FF,#F8FAFC)" }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start", flexWrap:"wrap", gap:12 }}>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:22, fontWeight:800 }}>{selectedPatient.name}</div>
+                    <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                      {selectedPatient.codigo && <span style={{ fontSize:13, fontWeight:700, color:"#0EA5E9", background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:8, padding:"4px 12px" }}>{selectedPatient.codigo}</span>}
+                      <span style={{ fontSize:22, fontWeight:800 }}>{selectedPatient.name}</span>
+                    </div>
                     <div style={{ fontSize:13, color:"#64748B", marginTop:4, lineHeight:1.8 }}>
                       {selectedPatient.birthDate && <span>Nasc: {formatDate(selectedPatient.birthDate+"T12:00:00")} </span>}
                       {selectedPatient.phone && <span>Tel: {selectedPatient.phone} </span>}
@@ -790,7 +797,10 @@
 
           {/* ═══ NEW PATIENT MODAL ═══ */}
           <Modal isOpen={showNewPatient} onClose={() => setShowNewPatient(false)} title="Novo Paciente" wide>
-            <Input label="Nome Completo *" value={npForm.name} onChange={e => setNpForm({...npForm, name:e.target.value})} placeholder="Nome do paciente" />
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 2fr", gap:12 }}>
+              <Input label="Código do Paciente" value={npForm.codigo} onChange={e => setNpForm({...npForm, codigo:e.target.value})} placeholder="Ex: P001" />
+              <Input label="Nome Completo *" value={npForm.name} onChange={e => setNpForm({...npForm, name:e.target.value})} placeholder="Nome do paciente" />
+            </div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
               <Input label="Data de Nascimento" type="date" value={npForm.birthDate} onChange={e => setNpForm({...npForm, birthDate:e.target.value})} />
               <Input label="Telefone" value={npForm.phone} onChange={e => setNpForm({...npForm, phone:e.target.value})} placeholder="(00) 00000-0000" />
@@ -801,17 +811,18 @@
             </div>
             <Input label="Endereço" value={npForm.address} onChange={e => setNpForm({...npForm, address:e.target.value})} placeholder="Endereço completo" />
             <div style={{ marginTop:8, paddingTop:16, borderTop:"2px dashed #E2E8F0" }}>
-              <div style={{ fontSize:14, fontWeight:700, color:"#334155", marginBottom:12 }}>Responsáveis *</div>
+              <div style={{ fontSize:14, fontWeight:700, color:"#334155", marginBottom:4 }}>Responsáveis</div>
+              <div style={{ fontSize:12, color:"#64748B", marginBottom:12 }}>Selecione pelo menos um responsável (clínico ou ortodontista).</div>
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-                <Select label="Responsável Clínico *" value={npForm.responsavel_clinico_id}
+                <Select label="Responsável Clínico" value={npForm.responsavel_clinico_id}
                   onChange={e => setNpForm({...npForm, responsavel_clinico_id:e.target.value})} options={allUserOpts} />
-                <Select label="Responsável Ortodontia *" value={npForm.responsavel_orto_id}
+                <Select label="Responsável Ortodontia" value={npForm.responsavel_orto_id}
                   onChange={e => setNpForm({...npForm, responsavel_orto_id:e.target.value})} options={allUserOpts} />
               </div>
             </div>
             <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
               <button onClick={() => setShowNewPatient(false)} style={btnSecondary}>Cancelar</button>
-              <button onClick={createPatient} style={{ ...btnPrimary, opacity:(!npForm.name.trim()||!npForm.responsavel_clinico_id||!npForm.responsavel_orto_id)?0.5:1 }}>Cadastrar Paciente</button>
+              <button onClick={createPatient} style={{ ...btnPrimary, opacity:(!npForm.name.trim()||(!npForm.responsavel_clinico_id&&!npForm.responsavel_orto_id))?0.5:1 }}>Cadastrar Paciente</button>
             </div>
           </Modal>
 
