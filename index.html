@@ -1,10 +1,9 @@
 <!DOCTYPE html>
-
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>O+ Fichas — Fichas Clínicas</title>
+  <title>O+ Fichas — Prontuário Eletrônico</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -16,6 +15,12 @@
     ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
     input, select, textarea { font-family: inherit; }
     button { font-family: inherit; }
+    .tab-btn { padding: 10px 20px; border: none; border-bottom: 3px solid transparent; background: none; font-size: 14px; font-weight: 700; color: #94A3B8; cursor: pointer; transition: all 0.2s; }
+    .tab-btn.active { color: #0EA5E9; border-bottom-color: #0EA5E9; }
+    .tab-btn:hover { color: #0EA5E9; }
+    .tipo-card { padding: 16px 24px; border-radius: 12px; border: 2px solid #E2E8F0; cursor: pointer; text-align: center; transition: all 0.2s; flex: 1; }
+    .tipo-card:hover { border-color: #94A3B8; }
+    .tipo-card.selected { border-color: currentColor; }
   </style>
 </head>
 <body>
@@ -23,7 +28,14 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
 
-    // ─── DATA ────────────────────────────────────────────────────────────
+    // ─── CONSTANTS ───────────────────────────────────────────────────────
+    const ROLES = { ADMIN: "admin", DENTISTA: "dentista", ORTO: "orto" };
+    const ROLE_LABELS = { admin: "Administrador", dentista: "Dentista", orto: "Ortodontista" };
+    const RECORD_TYPES = { ORTODONTIA: "ORTODONTIA", GERAL: "GERAL" };
+    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    const ALLOWED_FILE_TYPES = ["image/jpeg","image/png","image/webp","image/gif","application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+
     const SPECIALTIES = {
       ortodontia: {
         label: "Ortodontia", icon: "🦷", color: "#0EA5E9",
@@ -103,9 +115,25 @@
       [48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38],
     ];
 
+    const WIRE_MATERIALS = ["Nitinol", "Aço"];
+    const WIRE_FORMATS = ["Redondo", "Quadrado"];
+    const WIRE_GAUGES = ["012","014","016","018","020","16x16","16x22","17x25","19x25","21x25"];
+
+    // ─── UTILITIES ───────────────────────────────────────────────────────
     const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
     const formatDate = (d) => new Date(d).toLocaleDateString("pt-BR");
+    const formatDateTime = (d) => new Date(d).toLocaleString("pt-BR");
     const formatDateISO = (d) => new Date(d).toISOString().split("T")[0];
+    const fileIcon = (type) => {
+      if (type?.startsWith("image/")) return "🖼️";
+      if (type?.includes("pdf")) return "📄";
+      return "📎";
+    };
+    const formatSize = (bytes) => {
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+      return (bytes / 1048576).toFixed(1) + " MB";
+    };
 
     const defaultAnamnesis = {
       allergies: "", medications: "", diseases: "", surgeries: "", familyHistory: "",
@@ -114,135 +142,63 @@
       bleeding: "Não", healing: "Normal", anesthesiaReaction: "Não", observations: "",
     };
 
-    // ─── SIGNATURE PAD COMPONENT ─────────────────────────────────────────
+    const migratePatient = (p) => ({
+      ...p,
+      responsavel_clinico_id: p.responsavel_clinico_id || "",
+      responsavel_orto_id: p.responsavel_orto_id || "",
+      responsavelHistory: p.responsavelHistory || [],
+      documents: p.documents || [],
+      records: (p.records || []).map(r => ({
+        ...r,
+        tipo_atendimento: r.tipo_atendimento || (r.specialty === "ortodontia" ? "ORTODONTIA" : "GERAL"),
+        dentista_atendente_id: r.dentista_atendente_id || "",
+        dentista_responsavel_no_momento_id: r.dentista_responsavel_no_momento_id || "",
+        atendimento_fora_da_responsabilidade: r.atendimento_fora_da_responsabilidade || false,
+        motivo_fora: r.motivo_fora || "",
+        photos: r.photos || [],
+        wireInfo: r.wireInfo || { material: "", format: "", gauge: "" },
+      })),
+    });
+
+    const DEFAULT_ADMIN = {
+      id: "admin1", name: "Administrador", login: "admin", password: "admin123",
+      role: "admin", specialty: "", active: true, createdAt: new Date().toISOString(),
+    };
+
+    // ─── SIGNATURE PAD ──────────────────────────────────────────────────
     function SignaturePad({ value, onChange, label }) {
       const canvasRef = useRef(null);
       const [isDrawing, setIsDrawing] = useState(false);
       const [hasDrawn, setHasDrawn] = useState(false);
-
       useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext("2d");
         const rect = canvas.parentElement.getBoundingClientRect();
-        canvas.width = rect.width;
-        canvas.height = 160;
-        ctx.fillStyle = "#FAFBFC";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        // draw baseline
-        ctx.strokeStyle = "#E2E8F0";
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(20, 120);
-        ctx.lineTo(canvas.width - 20, 120);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        // load existing signature
+        canvas.width = rect.width; canvas.height = 160;
+        ctx.fillStyle = "#FAFBFC"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = "#E2E8F0"; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+        ctx.beginPath(); ctx.moveTo(20, 120); ctx.lineTo(canvas.width - 20, 120); ctx.stroke(); ctx.setLineDash([]);
         if (value) {
           const img = new Image();
-          img.onload = () => {
-            ctx.fillStyle = "#FAFBFC";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            setHasDrawn(true);
-          };
+          img.onload = () => { ctx.fillStyle="#FAFBFC"; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.drawImage(img,0,0,canvas.width,canvas.height); setHasDrawn(true); };
           img.src = value;
         }
       }, []);
-
-      const getPos = (e) => {
-        const canvas = canvasRef.current;
-        const rect = canvas.getBoundingClientRect();
-        const touch = e.touches ? e.touches[0] : e;
-        return {
-          x: (touch.clientX - rect.left) * (canvas.width / rect.width),
-          y: (touch.clientY - rect.top) * (canvas.height / rect.height),
-        };
-      };
-
-      const startDraw = (e) => {
-        e.preventDefault();
-        const ctx = canvasRef.current.getContext("2d");
-        const pos = getPos(e);
-        ctx.beginPath();
-        ctx.moveTo(pos.x, pos.y);
-        ctx.strokeStyle = "#1E293B";
-        ctx.lineWidth = 2.5;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        setIsDrawing(true);
-        setHasDrawn(true);
-      };
-
-      const draw = (e) => {
-        e.preventDefault();
-        if (!isDrawing) return;
-        const ctx = canvasRef.current.getContext("2d");
-        const pos = getPos(e);
-        ctx.lineTo(pos.x, pos.y);
-        ctx.stroke();
-      };
-
-      const endDraw = (e) => {
-        if (e) e.preventDefault();
-        setIsDrawing(false);
-        if (canvasRef.current && hasDrawn) {
-          onChange(canvasRef.current.toDataURL("image/png"));
-        }
-      };
-
-      const clearSignature = () => {
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#FAFBFC";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.strokeStyle = "#E2E8F0";
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(20, 120);
-        ctx.lineTo(canvas.width - 20, 120);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        setHasDrawn(false);
-        onChange("");
-      };
-
+      const getPos = (e) => { const c=canvasRef.current, r=c.getBoundingClientRect(), t=e.touches?e.touches[0]:e; return { x:(t.clientX-r.left)*(c.width/r.width), y:(t.clientY-r.top)*(c.height/r.height) }; };
+      const startDraw = (e) => { e.preventDefault(); const ctx=canvasRef.current.getContext("2d"), pos=getPos(e); ctx.beginPath(); ctx.moveTo(pos.x,pos.y); ctx.strokeStyle="#1E293B"; ctx.lineWidth=2.5; ctx.lineCap="round"; ctx.lineJoin="round"; setIsDrawing(true); setHasDrawn(true); };
+      const draw = (e) => { e.preventDefault(); if(!isDrawing) return; const ctx=canvasRef.current.getContext("2d"), pos=getPos(e); ctx.lineTo(pos.x,pos.y); ctx.stroke(); };
+      const endDraw = (e) => { if(e) e.preventDefault(); setIsDrawing(false); if(canvasRef.current && hasDrawn) onChange(canvasRef.current.toDataURL("image/png")); };
+      const clearSig = () => { const c=canvasRef.current, ctx=c.getContext("2d"); ctx.fillStyle="#FAFBFC"; ctx.fillRect(0,0,c.width,c.height); ctx.strokeStyle="#E2E8F0"; ctx.lineWidth=1; ctx.setLineDash([4,4]); ctx.beginPath(); ctx.moveTo(20,120); ctx.lineTo(c.width-20,120); ctx.stroke(); ctx.setLineDash([]); setHasDrawn(false); onChange(""); };
       return (
         <div style={{ marginBottom: 14 }}>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
-            {label || "Assinatura do Paciente"}
-          </label>
-          <div style={{
-            position: "relative", borderRadius: 12, border: "1.5px solid #CBD5E1",
-            overflow: "hidden", background: "#FAFBFC",
-          }}>
-            <canvas
-              ref={canvasRef}
-              style={{ display: "block", width: "100%", height: 160, cursor: "crosshair", touchAction: "none" }}
-              onMouseDown={startDraw}
-              onMouseMove={draw}
-              onMouseUp={endDraw}
-              onMouseLeave={endDraw}
-              onTouchStart={startDraw}
-              onTouchMove={draw}
-              onTouchEnd={endDraw}
-            />
-            <div style={{
-              position: "absolute", bottom: 8, left: 12,
-              fontSize: 10, color: "#94A3B8", pointerEvents: "none",
-            }}>
-              ✍️ Assine acima da linha
-            </div>
-            <button onClick={clearSignature} style={{
-              position: "absolute", top: 8, right: 8,
-              background: "rgba(255,255,255,0.9)", border: "1px solid #E2E8F0",
-              borderRadius: 6, padding: "4px 10px", fontSize: 11, color: "#64748B",
-              cursor: "pointer", fontWeight: 600,
-            }}>
-              Limpar
-            </button>
+          <label style={{ display:"block", fontSize:13, fontWeight:600, color:"#475569", marginBottom:6 }}>{label || "Assinatura do Paciente"}</label>
+          <div style={{ position:"relative", borderRadius:12, border:"1.5px solid #CBD5E1", overflow:"hidden", background:"#FAFBFC" }}>
+            <canvas ref={canvasRef} style={{ display:"block", width:"100%", height:160, cursor:"crosshair", touchAction:"none" }}
+              onMouseDown={startDraw} onMouseMove={draw} onMouseUp={endDraw} onMouseLeave={endDraw}
+              onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={endDraw} />
+            <div style={{ position:"absolute", bottom:8, left:12, fontSize:10, color:"#94A3B8", pointerEvents:"none" }}>Assine acima da linha</div>
+            <button onClick={clearSig} style={{ position:"absolute", top:8, right:8, background:"rgba(255,255,255,0.9)", border:"1px solid #E2E8F0", borderRadius:6, padding:"4px 10px", fontSize:11, color:"#64748B", cursor:"pointer", fontWeight:600 }}>Limpar</button>
           </div>
         </div>
       );
@@ -252,318 +208,389 @@
     function Modal({ isOpen, onClose, title, children, wide }) {
       if (!isOpen) return null;
       return (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 1000,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          background: "rgba(15,23,42,0.6)", backdropFilter: "blur(4px)",
-        }} onClick={onClose}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: "#fff", borderRadius: 16, width: wide ? "90%" : "min(560px, 92%)",
-            maxWidth: wide ? 900 : 560,
-            maxHeight: "88vh", overflow: "hidden", display: "flex", flexDirection: "column",
-            boxShadow: "0 25px 60px rgba(0,0,0,0.2)",
-          }}>
-            <div style={{
-              padding: "20px 24px", borderBottom: "1px solid #E2E8F0",
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-              flexShrink: 0,
-            }}>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#0F172A" }}>{title}</h2>
-              <button onClick={onClose} style={{
-                background: "#F1F5F9", border: "none", borderRadius: 8, width: 32, height: 32,
-                cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
-                color: "#64748B",
-              }}>×</button>
+        <div style={{ position:"fixed", inset:0, zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", background:"rgba(15,23,42,0.6)", backdropFilter:"blur(4px)" }} onClick={onClose}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:"#fff", borderRadius:16, width:wide?"90%":"min(560px,92%)", maxWidth:wide?900:560, maxHeight:"88vh", overflow:"hidden", display:"flex", flexDirection:"column", boxShadow:"0 25px 60px rgba(0,0,0,0.2)" }}>
+            <div style={{ padding:"20px 24px", borderBottom:"1px solid #E2E8F0", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
+              <h2 style={{ margin:0, fontSize:18, fontWeight:700, color:"#0F172A" }}>{title}</h2>
+              <button onClick={onClose} style={{ background:"#F1F5F9", border:"none", borderRadius:8, width:32, height:32, cursor:"pointer", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center", color:"#64748B" }}>×</button>
             </div>
-            <div style={{ padding: 24, overflowY: "auto", flex: 1 }}>{children}</div>
+            <div style={{ padding:24, overflowY:"auto", flex:1 }}>{children}</div>
           </div>
         </div>
       );
     }
-
     function Input({ label, ...props }) {
-      return (
-        <div style={{ marginBottom: 14 }}>
-          {label && <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 5 }}>{label}</label>}
-          <input {...props} style={{
-            width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1",
-            fontSize: 14, outline: "none", transition: "border 0.2s", boxSizing: "border-box",
-            background: "#F8FAFC", ...props.style,
-          }} />
-        </div>
-      );
+      return (<div style={{ marginBottom:14 }}>
+        {label && <label style={{ display:"block", fontSize:13, fontWeight:600, color:"#475569", marginBottom:5 }}>{label}</label>}
+        <input {...props} style={{ width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #CBD5E1", fontSize:14, outline:"none", transition:"border 0.2s", boxSizing:"border-box", background:"#F8FAFC", ...props.style }} />
+      </div>);
     }
-
     function Textarea({ label, ...props }) {
-      return (
-        <div style={{ marginBottom: 14 }}>
-          {label && <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 5 }}>{label}</label>}
-          <textarea {...props} style={{
-            width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1",
-            fontSize: 14, outline: "none", minHeight: 70, resize: "vertical", boxSizing: "border-box",
-            background: "#F8FAFC", fontFamily: "inherit", ...props.style,
-          }} />
-        </div>
-      );
+      return (<div style={{ marginBottom:14 }}>
+        {label && <label style={{ display:"block", fontSize:13, fontWeight:600, color:"#475569", marginBottom:5 }}>{label}</label>}
+        <textarea {...props} style={{ width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #CBD5E1", fontSize:14, outline:"none", minHeight:70, resize:"vertical", boxSizing:"border-box", background:"#F8FAFC", fontFamily:"inherit", ...props.style }} />
+      </div>);
     }
-
     function Select({ label, options, ...props }) {
-      return (
-        <div style={{ marginBottom: 14 }}>
-          {label && <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 5 }}>{label}</label>}
-          <select {...props} style={{
-            width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #CBD5E1",
-            fontSize: 14, outline: "none", background: "#F8FAFC", boxSizing: "border-box", ...props.style,
-          }}>
-            {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
-      );
+      return (<div style={{ marginBottom:14 }}>
+        {label && <label style={{ display:"block", fontSize:13, fontWeight:600, color:"#475569", marginBottom:5 }}>{label}</label>}
+        <select {...props} style={{ width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #CBD5E1", fontSize:14, outline:"none", background:"#F8FAFC", boxSizing:"border-box", ...props.style }}>
+          {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </div>);
     }
-
-    function Badge({ text, color, onRemove }) {
-      return (
-        <span style={{
-          display: "inline-flex", alignItems: "center", gap: 4,
-          background: color + "18", color, border: `1px solid ${color}40`,
-          borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 600, margin: "2px 4px 2px 0",
-        }}>
-          {text}
-          {onRemove && <button onClick={onRemove} style={{
-            background: "none", border: "none", color, cursor: "pointer", fontSize: 14, padding: 0, marginLeft: 2,
-          }}>×</button>}
-        </span>
-      );
+    function Badge({ text, color }) {
+      return (<span style={{ display:"inline-flex", alignItems:"center", gap:4, background:color+"18", color, border:`1px solid ${color}40`, borderRadius:8, padding:"4px 10px", fontSize:12, fontWeight:600, margin:"2px 4px 2px 0" }}>{text}</span>);
     }
-
     function ToothChart({ selected, onToggle }) {
-      return (
-        <div style={{ marginBottom: 14 }}>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 8 }}>Dentes Envolvidos</label>
-          <div style={{ background: "#F8FAFC", borderRadius: 12, padding: 12, border: "1px solid #E2E8F0" }}>
-            {TOOTH_NUMBERS.map((row, ri) => (
-              <div key={ri} style={{
-                display: "flex", justifyContent: "center", gap: 2, marginBottom: ri === 0 ? 4 : 0,
-                flexWrap: "wrap",
-                borderBottom: ri === 0 ? "2px solid #CBD5E1" : "none", paddingBottom: ri === 0 ? 6 : 0,
-              }}>
-                {row.map(t => {
-                  const isSel = selected.includes(t);
-                  return (
-                    <button key={t} onClick={() => onToggle(t)} style={{
-                      width: 28, height: 28, borderRadius: 6, fontSize: 10, fontWeight: 700,
-                      border: isSel ? "2px solid #0EA5E9" : "1px solid #CBD5E1",
-                      background: isSel ? "#0EA5E9" : "#fff", color: isSel ? "#fff" : "#64748B",
-                      cursor: "pointer", transition: "all 0.15s", padding: 0,
-                    }}>
-                      {t}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
+      return (<div style={{ marginBottom:14 }}>
+        <label style={{ display:"block", fontSize:13, fontWeight:600, color:"#475569", marginBottom:8 }}>Dentes Envolvidos</label>
+        <div style={{ background:"#F8FAFC", borderRadius:12, padding:12, border:"1px solid #E2E8F0" }}>
+          {TOOTH_NUMBERS.map((row, ri) => (
+            <div key={ri} style={{ display:"flex", justifyContent:"center", gap:2, marginBottom:ri===0?4:0, flexWrap:"wrap", borderBottom:ri===0?"2px solid #CBD5E1":"none", paddingBottom:ri===0?6:0 }}>
+              {row.map(t => { const s=selected.includes(t); return (
+                <button key={t} onClick={()=>onToggle(t)} style={{ width:28, height:28, borderRadius:6, fontSize:10, fontWeight:700, border:s?"2px solid #0EA5E9":"1px solid #CBD5E1", background:s?"#0EA5E9":"#fff", color:s?"#fff":"#64748B", cursor:"pointer", transition:"all 0.15s", padding:0 }}>{t}</button>
+              ); })}
+            </div>
+          ))}
         </div>
-      );
+      </div>);
     }
 
     // ─── MAIN APP ────────────────────────────────────────────────────────
     function App() {
-      const [patients, setPatients] = useState(() => {
-        try { return JSON.parse(localStorage.getItem("dental_patients")) || []; } catch { return []; }
+      // ── Auth State ──
+      const [users, setUsers] = useState(() => {
+        try { const u = JSON.parse(localStorage.getItem("dental_users")); return u && u.length ? u : [DEFAULT_ADMIN]; } catch { return [DEFAULT_ADMIN]; }
       });
+      const [currentUser, setCurrentUser] = useState(() => {
+        try { return JSON.parse(localStorage.getItem("dental_session")); } catch { return null; }
+      });
+      const [loginForm, setLoginForm] = useState({ login: "", password: "" });
+      const [loginError, setLoginError] = useState("");
+
+      // ── Data State ──
+      const [patients, setPatients] = useState(() => {
+        try { return (JSON.parse(localStorage.getItem("dental_patients")) || []).map(migratePatient); } catch { return []; }
+      });
+      const [auditLogs, setAuditLogs] = useState(() => {
+        try { return JSON.parse(localStorage.getItem("dental_audit")) || []; } catch { return []; }
+      });
+
+      // ── Navigation ──
       const [view, setView] = useState("list");
       const [selectedPatient, setSelectedPatient] = useState(null);
+      const [searchTerm, setSearchTerm] = useState("");
+      const [patientTab, setPatientTab] = useState("orto");
+      const [auditFilter, setAuditFilter] = useState("");
+
+      // ── Modals ──
       const [showNewPatient, setShowNewPatient] = useState(false);
       const [showNewRecord, setShowNewRecord] = useState(false);
       const [showAnamnesis, setShowAnamnesis] = useState(false);
-      const [searchTerm, setSearchTerm] = useState("");
       const [editingAnamnesis, setEditingAnamnesis] = useState(false);
       const [viewingSignature, setViewingSignature] = useState(null);
-
-      useEffect(() => {
-        localStorage.setItem("dental_patients", JSON.stringify(patients));
-      }, [patients]);
-
-      const [npForm, setNpForm] = useState({
-        name: "", birthDate: "", phone: "", email: "", cpf: "", address: "",
-      });
-
-      const [anamnesisForm, setAnamnesisForm] = useState({ ...defaultAnamnesis });
-
-      const [nrForm, setNrForm] = useState({
-        date: formatDateISO(new Date()), specialty: "", procedures: [],
-        teeth: [], notes: "", nextAppointment: "", value: "", signature: "",
-        photos: [], wireInfo: { material: "", format: "", gauge: "" },
-      });
       const [viewingPhoto, setViewingPhoto] = useState(null);
-      const photoInputRef = useRef(null);
+      const [showChangeResp, setShowChangeResp] = useState(false);
+      const [showRespCheck, setShowRespCheck] = useState(false);
+      const [showUserForm, setShowUserForm] = useState(false);
+      const [showUploadDoc, setShowUploadDoc] = useState(false);
 
+      // ── Forms ──
+      const [npForm, setNpForm] = useState({ name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
+      const emptyNrForm = { date:formatDateISO(new Date()), tipo_atendimento:"", specialty:"", procedures:[], teeth:[], notes:"", nextAppointment:"", value:"", signature:"", photos:[], wireInfo:{material:"",format:"",gauge:""} };
+      const [nrForm, setNrForm] = useState({...emptyNrForm});
+      const [anamnesisForm, setAnamnesisForm] = useState({...defaultAnamnesis});
+      const [userForm, setUserForm] = useState({ id:"", name:"", login:"", password:"", role:"dentista", active:true });
+      const [editingUserId, setEditingUserId] = useState(null);
+      const [respForm, setRespForm] = useState({ responsavel_clinico_id:"", responsavel_orto_id:"" });
+      const [respCheckMotivo, setRespCheckMotivo] = useState("");
+      const [pendingRecord, setPendingRecord] = useState(null);
+
+      // ── Refs ──
+      const photoInputRef = useRef(null);
+      const docInputRef = useRef(null);
+
+      // ── Persist ──
+      useEffect(() => { localStorage.setItem("dental_users", JSON.stringify(users)); }, [users]);
+      useEffect(() => { localStorage.setItem("dental_patients", JSON.stringify(patients)); }, [patients]);
+      useEffect(() => { localStorage.setItem("dental_audit", JSON.stringify(auditLogs)); }, [auditLogs]);
+      useEffect(() => { if (currentUser) localStorage.setItem("dental_session", JSON.stringify(currentUser)); else localStorage.removeItem("dental_session"); }, [currentUser]);
+
+      // ── Helpers ──
+      const getUserName = (id) => { const u = users.find(x => x.id === id); return u ? u.name : "—"; };
+      const isAdmin = currentUser?.role === "admin";
+      const activeDentists = users.filter(u => u.active && u.role !== "admin");
+
+      const addAudit = (action, targetType, targetId, targetName, details) => {
+        setAuditLogs(prev => [{ id:generateId(), userId:currentUser?.id, userName:currentUser?.name, action, targetType, targetId, targetName, details: details||"", timestamp:new Date().toISOString(), userAgent:navigator.userAgent }, ...prev]);
+      };
+
+      // ── Auth ──
+      const handleLogin = () => {
+        const u = users.find(x => x.login === loginForm.login && x.password === loginForm.password && x.active);
+        if (!u) { setLoginError("Login ou senha inválidos."); return; }
+        setCurrentUser(u);
+        setLoginError("");
+        setLoginForm({ login:"", password:"" });
+        setTimeout(() => addAudit("LOGIN","usuario",u.id,u.name,"Login realizado"), 0);
+      };
+      const handleLogout = () => { setCurrentUser(null); setView("list"); setSelectedPatient(null); };
+
+      // ── Patient CRUD ──
       const createPatient = () => {
-        if (!npForm.name.trim()) return;
-        const p = { id: generateId(), ...npForm, anamnesis: { ...defaultAnamnesis }, records: [], createdAt: new Date().toISOString() };
+        if (!npForm.name.trim() || !npForm.responsavel_clinico_id || !npForm.responsavel_orto_id) return;
+        const p = { id:generateId(), ...npForm, anamnesis:{...defaultAnamnesis}, records:[], documents:[], responsavelHistory:[], createdAt:new Date().toISOString() };
         setPatients(prev => [p, ...prev]);
-        setNpForm({ name: "", birthDate: "", phone: "", email: "", cpf: "", address: "" });
+        setNpForm({ name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
         setShowNewPatient(false);
         setSelectedPatient(p);
         setView("patient");
+        addAudit("CRIAR_PACIENTE","paciente",p.id,p.name, `Resp. Clínico: ${getUserName(npForm.responsavel_clinico_id)}, Resp. Orto: ${getUserName(npForm.responsavel_orto_id)}`);
       };
 
+      const deletePatient = (id) => {
+        const p = patients.find(x => x.id === id);
+        setPatients(prev => prev.filter(x => x.id !== id));
+        setSelectedPatient(null); setView("list");
+        if (p) addAudit("EXCLUIR_PACIENTE","paciente",id,p.name,"");
+      };
+
+      const openPatient = (p) => {
+        const fresh = patients.find(x => x.id === p.id) || p;
+        setSelectedPatient(fresh); setView("patient"); setPatientTab("orto");
+        addAudit("VISUALIZAR_PRONTUARIO","paciente",fresh.id,fresh.name,"");
+      };
+
+      // ── Anamnesis ──
       const saveAnamnesis = () => {
-        setPatients(prev => prev.map(p =>
-          p.id === selectedPatient.id ? { ...p, anamnesis: { ...anamnesisForm } } : p
-        ));
-        setSelectedPatient(prev => ({ ...prev, anamnesis: { ...anamnesisForm } }));
+        setPatients(prev => prev.map(p => p.id===selectedPatient.id ? {...p, anamnesis:{...anamnesisForm}} : p));
+        setSelectedPatient(prev => ({...prev, anamnesis:{...anamnesisForm}}));
         setEditingAnamnesis(false);
+        addAudit("EDITAR_ANAMNESE","paciente",selectedPatient.id,selectedPatient.name,"");
       };
 
-      const addRecord = () => {
-        if (!nrForm.specialty || nrForm.procedures.length === 0) return;
-        const rec = { id: generateId(), ...nrForm, createdAt: new Date().toISOString() };
-        const updated = { ...selectedPatient, records: [rec, ...selectedPatient.records] };
-        setPatients(prev => prev.map(p => p.id === selectedPatient.id ? updated : p));
+      // ── Change Responsible ──
+      const saveResponsible = () => {
+        const changes = [];
+        if (respForm.responsavel_clinico_id !== selectedPatient.responsavel_clinico_id) {
+          changes.push({ date:new Date().toISOString(), changedBy:currentUser.id, changedByName:currentUser.name, field:"responsavel_clinico_id", from:selectedPatient.responsavel_clinico_id, fromName:getUserName(selectedPatient.responsavel_clinico_id), to:respForm.responsavel_clinico_id, toName:getUserName(respForm.responsavel_clinico_id) });
+        }
+        if (respForm.responsavel_orto_id !== selectedPatient.responsavel_orto_id) {
+          changes.push({ date:new Date().toISOString(), changedBy:currentUser.id, changedByName:currentUser.name, field:"responsavel_orto_id", from:selectedPatient.responsavel_orto_id, fromName:getUserName(selectedPatient.responsavel_orto_id), to:respForm.responsavel_orto_id, toName:getUserName(respForm.responsavel_orto_id) });
+        }
+        if (changes.length === 0) { setShowChangeResp(false); return; }
+        const updated = { ...selectedPatient, responsavel_clinico_id:respForm.responsavel_clinico_id, responsavel_orto_id:respForm.responsavel_orto_id, responsavelHistory:[...selectedPatient.responsavelHistory, ...changes] };
+        setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
         setSelectedPatient(updated);
-        setNrForm({ date: formatDateISO(new Date()), specialty: "", procedures: [], teeth: [], notes: "", nextAppointment: "", value: "", signature: "", photos: [], wireInfo: { material: "", format: "", gauge: "" } });
+        setShowChangeResp(false);
+        addAudit("ALTERAR_RESPONSAVEL","paciente",selectedPatient.id,selectedPatient.name, changes.map(c => `${c.field==="responsavel_clinico_id"?"Clínico":"Orto"}: ${c.fromName} → ${c.toName}`).join("; "));
+      };
+
+      // ── Records ──
+      const tryAddRecord = () => {
+        if (!nrForm.tipo_atendimento || !nrForm.specialty || nrForm.procedures.length === 0) return;
+        const respField = nrForm.tipo_atendimento === "ORTODONTIA" ? "responsavel_orto_id" : "responsavel_clinico_id";
+        const respId = selectedPatient[respField];
+        const isResp = currentUser.id === respId || !respId;
+        const rec = {
+          id:generateId(), ...nrForm,
+          dentista_atendente_id: currentUser.id,
+          dentista_responsavel_no_momento_id: respId,
+          atendimento_fora_da_responsabilidade: !isResp,
+          motivo_fora: "",
+          createdAt: new Date().toISOString(),
+        };
+        if (!isResp) {
+          setPendingRecord(rec);
+          setRespCheckMotivo("");
+          setShowRespCheck(true);
+        } else {
+          saveRecord(rec);
+        }
+      };
+
+      const confirmOutOfResp = () => {
+        if (!pendingRecord) return;
+        const rec = { ...pendingRecord, motivo_fora: respCheckMotivo };
+        saveRecord(rec);
+        setShowRespCheck(false);
+        setPendingRecord(null);
+        setRespCheckMotivo("");
+      };
+
+      const saveRecord = (rec) => {
+        const updated = { ...selectedPatient, records: [rec, ...selectedPatient.records] };
+        setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
+        setSelectedPatient(updated);
+        setNrForm({...emptyNrForm});
         setShowNewRecord(false);
+        addAudit("CRIAR_ATENDIMENTO","atendimento",rec.id,selectedPatient.name,
+          `Tipo: ${rec.tipo_atendimento}, Especialidade: ${SPECIALTIES[rec.specialty]?.label}, Fora da resp: ${rec.atendimento_fora_da_responsabilidade?"SIM":"NÃO"}${rec.motivo_fora?", Motivo: "+rec.motivo_fora:""}`);
       };
 
       const deleteRecord = (recId) => {
         const updated = { ...selectedPatient, records: selectedPatient.records.filter(r => r.id !== recId) };
-        setPatients(prev => prev.map(p => p.id === selectedPatient.id ? updated : p));
+        setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
         setSelectedPatient(updated);
+        addAudit("EXCLUIR_ATENDIMENTO","atendimento",recId,selectedPatient.name,"");
       };
 
-      const deletePatient = (id) => {
-        setPatients(prev => prev.filter(p => p.id !== id));
-        setSelectedPatient(null);
-        setView("list");
-      };
-
-      const openPatient = (p) => { setSelectedPatient(p); setView("patient"); };
-
-      const filteredPatients = patients.filter(p =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.cpf && p.cpf.includes(searchTerm))
-      );
-
-      const specOpts = [{ value: "", label: "Selecione a especialidade..." }, ...Object.entries(SPECIALTIES).map(([k, v]) => ({ value: k, label: `${v.icon} ${v.label}` }))];
-
-      const toggleProcedure = (proc) => {
-        setNrForm(prev => ({
-          ...prev,
-          procedures: prev.procedures.includes(proc)
-            ? prev.procedures.filter(p => p !== proc)
-            : [...prev.procedures, proc],
-        }));
-      };
-
-      const toggleTooth = (t) => {
-        setNrForm(prev => ({
-          ...prev,
-          teeth: prev.teeth.includes(t) ? prev.teeth.filter(x => x !== t) : [...prev.teeth, t],
-        }));
-      };
-
+      // ── Photos ──
       const handlePhotoUpload = (e) => {
-        const files = Array.from(e.target.files);
-        files.forEach(file => {
+        Array.from(e.target.files).forEach(file => {
+          if (file.size > MAX_FILE_SIZE) { alert(`Arquivo ${file.name} excede 10MB.`); return; }
           const reader = new FileReader();
-          reader.onload = (ev) => {
-            setNrForm(prev => ({ ...prev, photos: [...prev.photos, { id: generateId(), name: file.name, data: ev.target.result }] }));
-          };
+          reader.onload = (ev) => setNrForm(prev => ({...prev, photos:[...prev.photos, {id:generateId(), name:file.name, type:file.type, size:file.size, data:ev.target.result}]}));
           reader.readAsDataURL(file);
         });
         if (photoInputRef.current) photoInputRef.current.value = "";
       };
 
-      const removePhoto = (photoId) => {
-        setNrForm(prev => ({ ...prev, photos: prev.photos.filter(p => p.id !== photoId) }));
+      // ── Patient Documents ──
+      const handleDocUpload = (e) => {
+        Array.from(e.target.files).forEach(file => {
+          if (file.size > MAX_FILE_SIZE) { alert(`Arquivo ${file.name} excede 10MB.`); return; }
+          if (!ALLOWED_FILE_TYPES.some(t => file.type === t || file.type.startsWith("image/"))) { alert(`Tipo não permitido: ${file.type}`); return; }
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            const doc = { id:generateId(), name:file.name, type:file.type, size:file.size, data:ev.target.result, uploadedBy:currentUser.id, uploadedByName:currentUser.name, uploadedAt:new Date().toISOString() };
+            const updated = { ...selectedPatient, documents:[doc, ...selectedPatient.documents] };
+            setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
+            setSelectedPatient(updated);
+            addAudit("UPLOAD_DOCUMENTO","paciente",selectedPatient.id,selectedPatient.name, `Arquivo: ${file.name} (${formatSize(file.size)})`);
+          };
+          reader.readAsDataURL(file);
+        });
+        if (docInputRef.current) docInputRef.current.value = "";
       };
 
-      const WIRE_MATERIALS = ["Nitinol", "Aço"];
-      const WIRE_FORMATS = ["Redondo", "Quadrado"];
-      const WIRE_GAUGES = ["012", "014", "016", "018", "020", "16x16", "16x22", "17x25", "19x25", "21x25"];
-
-      const needsWireInfo = nrForm.specialty === "ortodontia" && nrForm.procedures.length > 0;
-
-      // styles
-      const btnPrimary = {
-        background: "linear-gradient(135deg, #0EA5E9, #0284C7)", color: "#fff",
-        border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 14, fontWeight: 700,
-        cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6,
-      };
-      const btnSecondary = {
-        background: "#F1F5F9", color: "#475569", border: "1.5px solid #E2E8F0",
-        borderRadius: 10, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer",
-      };
-      const cardStyle = {
-        background: "#fff", borderRadius: 14, border: "1px solid #E2E8F0",
-        padding: 20, marginBottom: 12, cursor: "pointer", transition: "all 0.2s",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+      const deleteDoc = (docId) => {
+        const updated = { ...selectedPatient, documents: selectedPatient.documents.filter(d => d.id !== docId) };
+        setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
+        setSelectedPatient(updated);
       };
 
+      // ── Users ──
+      const saveUser = () => {
+        if (!userForm.name.trim() || !userForm.login.trim()) return;
+        if (editingUserId) {
+          setUsers(prev => prev.map(u => u.id===editingUserId ? {...u, name:userForm.name, login:userForm.login, role:userForm.role, active:userForm.active, ...(userForm.password ? {password:userForm.password} : {})} : u));
+          addAudit("EDITAR_USUARIO","usuario",editingUserId,userForm.name,"");
+        } else {
+          if (!userForm.password) return;
+          if (users.some(u => u.login === userForm.login)) { alert("Login já existe."); return; }
+          const nu = { id:generateId(), name:userForm.name, login:userForm.login, password:userForm.password, role:userForm.role, active:true, createdAt:new Date().toISOString() };
+          setUsers(prev => [...prev, nu]);
+          addAudit("CRIAR_USUARIO","usuario",nu.id,nu.name,`Perfil: ${ROLE_LABELS[nu.role]}`);
+        }
+        setShowUserForm(false); setEditingUserId(null);
+        setUserForm({ id:"", name:"", login:"", password:"", role:"dentista", active:true });
+      };
+
+      // ── Procedure/Tooth toggles ──
+      const toggleProcedure = (proc) => setNrForm(prev => ({...prev, procedures: prev.procedures.includes(proc) ? prev.procedures.filter(p=>p!==proc) : [...prev.procedures, proc]}));
+      const toggleTooth = (t) => setNrForm(prev => ({...prev, teeth: prev.teeth.includes(t) ? prev.teeth.filter(x=>x!==t) : [...prev.teeth, t]}));
+
+      const filteredPatients = patients.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || (p.cpf && p.cpf.includes(searchTerm)));
+
+      const needsWireInfo = nrForm.tipo_atendimento === "ORTODONTIA" && nrForm.procedures.length > 0;
+      const geralSpecOpts = [{ value:"", label:"Selecione..." }, ...Object.entries(SPECIALTIES).filter(([k])=>k!=="ortodontia").map(([k,v])=>({ value:k, label:`${v.icon} ${v.label}` }))];
+      const dentistOpts = [{ value:"", label:"Selecione..." }, ...activeDentists.map(u => ({ value:u.id, label:`${u.name} (${ROLE_LABELS[u.role]})` }))];
+      const allUserOpts = [{ value:"", label:"Selecione..." }, ...users.filter(u=>u.active && u.id !== "admin1").map(u => ({ value:u.id, label:`${u.name} (${ROLE_LABELS[u.role]})` }))];
+
+      // ── Styles ──
+      const btnPrimary = { background:"linear-gradient(135deg,#0EA5E9,#0284C7)", color:"#fff", border:"none", borderRadius:10, padding:"10px 20px", fontSize:14, fontWeight:700, cursor:"pointer", display:"inline-flex", alignItems:"center", gap:6 };
+      const btnSecondary = { background:"#F1F5F9", color:"#475569", border:"1.5px solid #E2E8F0", borderRadius:10, padding:"10px 20px", fontSize:14, fontWeight:600, cursor:"pointer" };
+      const btnDanger = { ...btnSecondary, color:"#EF4444", borderColor:"#FECACA" };
+      const cardStyle = { background:"#fff", borderRadius:14, border:"1px solid #E2E8F0", padding:20, marginBottom:12, transition:"all 0.2s", boxShadow:"0 1px 3px rgba(0,0,0,0.04)" };
+
+      // ═══════════════════════════════════════════════════════════════════
+      // LOGIN SCREEN
+      // ═══════════════════════════════════════════════════════════════════
+      if (!currentUser) {
+        return (
+          <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"linear-gradient(135deg,#0F172A 0%,#1E3A5F 100%)" }}>
+            <div style={{ background:"#fff", borderRadius:20, padding:40, width:"min(420px,92%)", boxShadow:"0 25px 60px rgba(0,0,0,0.3)" }}>
+              <div style={{ textAlign:"center", marginBottom:30 }}>
+                <div style={{ fontSize:36, marginBottom:8 }}>🦷</div>
+                <h1 style={{ fontSize:24, fontWeight:800, color:"#0F172A", margin:0 }}>O+ Fichas</h1>
+                <p style={{ fontSize:13, color:"#64748B", marginTop:4 }}>Prontuário Eletrônico Odontológico</p>
+              </div>
+              {loginError && <div style={{ background:"#FEF2F2", border:"1px solid #FECACA", borderRadius:10, padding:"10px 14px", fontSize:13, color:"#DC2626", marginBottom:14, fontWeight:600 }}>{loginError}</div>}
+              <Input label="Login" value={loginForm.login} onChange={e => setLoginForm({...loginForm, login:e.target.value})} placeholder="Seu login" onKeyDown={e => e.key==="Enter" && handleLogin()} />
+              <Input label="Senha" type="password" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password:e.target.value})} placeholder="Sua senha" onKeyDown={e => e.key==="Enter" && handleLogin()} />
+              <button onClick={handleLogin} style={{ ...btnPrimary, width:"100%", justifyContent:"center", padding:"12px 20px", fontSize:15, marginTop:8 }}>Entrar</button>
+              <div style={{ textAlign:"center", marginTop:16, fontSize:11, color:"#94A3B8" }}>Primeiro acesso: admin / admin123</div>
+            </div>
+          </div>
+        );
+      }
+
+      // ═══════════════════════════════════════════════════════════════════
+      // AUTHENTICATED APP
+      // ═══════════════════════════════════════════════════════════════════
       return (
         <div>
-          {/* HEADER */}
-          <div style={{
-            background: "linear-gradient(135deg, #0F172A 0%, #1E3A5F 100%)",
-            color: "#fff", padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between",
-            position: "sticky", top: 0, zIndex: 100,
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              {view === "patient" && (
-                <button onClick={() => { setView("list"); setSelectedPatient(null); }} style={{
-                  background: "rgba(255,255,255,0.12)", border: "none", borderRadius: 8, width: 36, height: 36,
-                  color: "#fff", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
-                }}>←</button>
+          {/* ── HEADER ── */}
+          <div style={{ background:"linear-gradient(135deg,#0F172A 0%,#1E3A5F 100%)", color:"#fff", padding:"12px 24px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:100, flexWrap:"wrap", gap:8 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              {(view === "patient" || view === "users" || view === "audit") && (
+                <button onClick={() => { setView("list"); setSelectedPatient(null); }} style={{ background:"rgba(255,255,255,0.12)", border:"none", borderRadius:8, width:36, height:36, color:"#fff", cursor:"pointer", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center" }}>←</button>
               )}
               <div>
-                <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.5 }}>🦷 O+ Fichas</div>
-                <div style={{ fontSize: 11, opacity: 0.6, fontWeight: 500 }}>Sistema de Fichas Clínicas</div>
+                <div style={{ fontSize:18, fontWeight:800, letterSpacing:-0.5, cursor:"pointer" }} onClick={() => { setView("list"); setSelectedPatient(null); }}>🦷 O+ Fichas</div>
+                <div style={{ fontSize:10, opacity:0.5, fontWeight:500 }}>Prontuário Eletrônico</div>
               </div>
             </div>
-            {view === "list" && (
-              <button onClick={() => setShowNewPatient(true)} style={btnPrimary}>+ Novo Paciente</button>
-            )}
+            <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+              {isAdmin && (
+                <>
+                  <button onClick={() => setView("users")} style={{ background: view==="users"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600 }}>Usuários</button>
+                  <button onClick={() => setView("audit")} style={{ background: view==="audit"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600 }}>Auditoria</button>
+                </>
+              )}
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginLeft:8 }}>
+                <div style={{ textAlign:"right" }}>
+                  <div style={{ fontSize:12, fontWeight:700 }}>{currentUser.name}</div>
+                  <div style={{ fontSize:10, opacity:0.6 }}>{ROLE_LABELS[currentUser.role]}</div>
+                </div>
+                <button onClick={handleLogout} style={{ background:"rgba(255,255,255,0.12)", border:"none", borderRadius:8, padding:"6px 10px", color:"#fff", cursor:"pointer", fontSize:11, fontWeight:600 }}>Sair</button>
+              </div>
+            </div>
           </div>
 
           {/* ═══ PATIENT LIST ═══ */}
           {view === "list" && (
-            <div style={{ padding: "20px 24px", maxWidth: 800, margin: "0 auto" }}>
-              <div style={{ marginBottom: 16 }}>
-                <input
-                  placeholder="🔍 Buscar paciente por nome ou CPF..."
-                  value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                  style={{
-                    width: "100%", padding: "12px 16px", borderRadius: 12, border: "1.5px solid #CBD5E1",
-                    fontSize: 14, outline: "none", background: "#fff", boxSizing: "border-box",
-                  }}
-                />
+            <div style={{ padding:"20px 24px", maxWidth:800, margin:"0 auto" }}>
+              <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
+                <input placeholder="Buscar paciente por nome ou CPF..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                  style={{ flex:1, minWidth:200, padding:"12px 16px", borderRadius:12, border:"1.5px solid #CBD5E1", fontSize:14, outline:"none", background:"#fff", boxSizing:"border-box" }} />
+                <button onClick={() => setShowNewPatient(true)} style={btnPrimary}>+ Novo Paciente</button>
               </div>
               {filteredPatients.length === 0 && (
-                <div style={{ textAlign: "center", padding: 60, color: "#94A3B8" }}>
-                  <div style={{ fontSize: 48, marginBottom: 12 }}>🦷</div>
-                  <div style={{ fontSize: 16, fontWeight: 600 }}>Nenhum paciente cadastrado</div>
-                  <div style={{ fontSize: 13, marginTop: 4 }}>Clique em "Novo Paciente" para começar</div>
+                <div style={{ textAlign:"center", padding:60, color:"#94A3B8" }}>
+                  <div style={{ fontSize:48, marginBottom:12 }}>🦷</div>
+                  <div style={{ fontSize:16, fontWeight:600 }}>Nenhum paciente cadastrado</div>
+                  <div style={{ fontSize:13, marginTop:4 }}>Clique em "+ Novo Paciente" para começar</div>
                 </div>
               )}
               {filteredPatients.map(p => (
-                <div key={p.id} onClick={() => openPatient(p)} style={cardStyle}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = "#0EA5E9"}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = "#E2E8F0"}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
+                <div key={p.id} onClick={() => openPatient(p)} style={{...cardStyle, cursor:"pointer"}}
+                  onMouseEnter={e => e.currentTarget.style.borderColor="#0EA5E9"} onMouseLeave={e => e.currentTarget.style.borderColor="#E2E8F0"}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
                     <div>
-                      <div style={{ fontSize: 16, fontWeight: 700 }}>{p.name}</div>
-                      <div style={{ fontSize: 12, color: "#64748B", marginTop: 4 }}>
-                        {p.phone && `📱 ${p.phone}`}{p.cpf && ` · CPF: ${p.cpf}`}
+                      <div style={{ fontSize:16, fontWeight:700 }}>{p.name}</div>
+                      <div style={{ fontSize:12, color:"#64748B", marginTop:4 }}>
+                        {p.phone && `${p.phone}`}{p.cpf && ` · CPF: ${p.cpf}`}
+                      </div>
+                      <div style={{ fontSize:11, color:"#94A3B8", marginTop:4 }}>
+                        Clínico: <strong>{getUserName(p.responsavel_clinico_id)}</strong> · Orto: <strong>{getUserName(p.responsavel_orto_id)}</strong>
                       </div>
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 11, color: "#94A3B8" }}>Cadastro: {formatDate(p.createdAt)}</div>
-                      <div style={{
-                        fontSize: 12, fontWeight: 700, color: "#0EA5E9", marginTop: 4,
-                        background: "#0EA5E910", padding: "2px 8px", borderRadius: 6,
-                      }}>{p.records.length} atendimento{p.records.length !== 1 ? "s" : ""}</div>
+                    <div style={{ textAlign:"right" }}>
+                      <div style={{ fontSize:11, color:"#94A3B8" }}>{formatDate(p.createdAt)}</div>
+                      <div style={{ fontSize:12, fontWeight:700, color:"#0EA5E9", marginTop:4, background:"#0EA5E910", padding:"2px 8px", borderRadius:6 }}>{p.records.length} atend.</div>
                     </div>
                   </div>
                 </div>
@@ -573,153 +600,401 @@
 
           {/* ═══ PATIENT DETAIL ═══ */}
           {view === "patient" && selectedPatient && (
-            <div style={{ padding: "20px 24px", maxWidth: 800, margin: "0 auto" }}>
+            <div style={{ padding:"20px 24px", maxWidth:800, margin:"0 auto" }}>
               {/* Info card */}
-              <div style={{ ...cardStyle, cursor: "default", background: "linear-gradient(135deg, #F0F9FF, #F8FAFC)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", flexWrap: "wrap", gap: 12 }}>
-                  <div>
-                    <div style={{ fontSize: 22, fontWeight: 800 }}>{selectedPatient.name}</div>
-                    <div style={{ fontSize: 13, color: "#64748B", marginTop: 4, lineHeight: 1.8 }}>
-                      {selectedPatient.birthDate && <span>🎂 {formatDate(selectedPatient.birthDate + "T12:00:00")} &nbsp;</span>}
-                      {selectedPatient.phone && <span>📱 {selectedPatient.phone} &nbsp;</span>}
-                      {selectedPatient.email && <span>✉️ {selectedPatient.email} &nbsp;</span>}
-                      {selectedPatient.cpf && <span>📋 CPF: {selectedPatient.cpf}</span>}
-                      {selectedPatient.address && <div>📍 {selectedPatient.address}</div>}
+              <div style={{ ...cardStyle, background:"linear-gradient(135deg,#F0F9FF,#F8FAFC)" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start", flexWrap:"wrap", gap:12 }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:22, fontWeight:800 }}>{selectedPatient.name}</div>
+                    <div style={{ fontSize:13, color:"#64748B", marginTop:4, lineHeight:1.8 }}>
+                      {selectedPatient.birthDate && <span>Nasc: {formatDate(selectedPatient.birthDate+"T12:00:00")} </span>}
+                      {selectedPatient.phone && <span>Tel: {selectedPatient.phone} </span>}
+                      {selectedPatient.cpf && <span>CPF: {selectedPatient.cpf} </span>}
+                      {selectedPatient.email && <span>Email: {selectedPatient.email} </span>}
+                      {selectedPatient.address && <div>Endereço: {selectedPatient.address}</div>}
+                    </div>
+                    <div style={{ display:"flex", gap:12, marginTop:10, flexWrap:"wrap" }}>
+                      <div style={{ background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:10, padding:"8px 14px" }}>
+                        <div style={{ fontSize:10, fontWeight:700, color:"#3B82F6", textTransform:"uppercase" }}>Resp. Clínico</div>
+                        <div style={{ fontSize:14, fontWeight:700, color:"#1E40AF" }}>{getUserName(selectedPatient.responsavel_clinico_id)}</div>
+                      </div>
+                      <div style={{ background:"#F0FDFA", border:"1px solid #99F6E4", borderRadius:10, padding:"8px 14px" }}>
+                        <div style={{ fontSize:10, fontWeight:700, color:"#14B8A6", textTransform:"uppercase" }}>Resp. Ortodontia</div>
+                        <div style={{ fontSize:14, fontWeight:700, color:"#0F766E" }}>{getUserName(selectedPatient.responsavel_orto_id)}</div>
+                      </div>
                     </div>
                   </div>
-                  <button onClick={() => {
-                    if (confirm("Excluir este paciente e todos os registros?")) deletePatient(selectedPatient.id);
-                  }} style={{ ...btnSecondary, fontSize: 12, padding: "6px 12px", color: "#EF4444", borderColor: "#FECACA" }}>
-                    Excluir Paciente
-                  </button>
+                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                    {isAdmin && <button onClick={() => { setRespForm({ responsavel_clinico_id:selectedPatient.responsavel_clinico_id, responsavel_orto_id:selectedPatient.responsavel_orto_id }); setShowChangeResp(true); }} style={{ ...btnSecondary, fontSize:11, padding:"6px 12px" }}>Alterar Responsáveis</button>}
+                    {isAdmin && <button onClick={() => { if (confirm("Excluir este paciente e todos os registros?")) deletePatient(selectedPatient.id); }} style={{ ...btnDanger, fontSize:11, padding:"6px 12px" }}>Excluir Paciente</button>}
+                  </div>
                 </div>
               </div>
 
               {/* Action buttons */}
-              <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-                <button onClick={() => {
-                  setAnamnesisForm({ ...defaultAnamnesis, ...selectedPatient.anamnesis });
-                  setShowAnamnesis(true);
-                  setEditingAnamnesis(false);
-                }} style={btnSecondary}>📋 Anamnese</button>
+              <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
+                <button onClick={() => { setAnamnesisForm({...defaultAnamnesis, ...selectedPatient.anamnesis}); setShowAnamnesis(true); setEditingAnamnesis(false); }} style={btnSecondary}>Anamnese</button>
+                <button onClick={() => { docInputRef.current?.click(); }} style={btnSecondary}>Anexar Documento</button>
                 <button onClick={() => setShowNewRecord(true)} style={btnPrimary}>+ Novo Atendimento</button>
+                <input ref={docInputRef} type="file" accept="image/*,.pdf,.docx" multiple onChange={handleDocUpload} style={{ display:"none" }} />
               </div>
 
-              {/* Records */}
-              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12, color: "#334155" }}>
-                Histórico de Atendimentos ({selectedPatient.records.length})
-              </div>
-
-              {selectedPatient.records.length === 0 && (
-                <div style={{ textAlign: "center", padding: 40, color: "#94A3B8", background: "#fff", borderRadius: 14, border: "1px solid #E2E8F0" }}>
-                  <div style={{ fontSize: 13 }}>Nenhum atendimento registrado</div>
+              {/* Patient Documents */}
+              {selectedPatient.documents?.length > 0 && (
+                <div style={{ ...cardStyle, marginBottom:16 }}>
+                  <div style={{ fontSize:14, fontWeight:700, marginBottom:10, color:"#334155" }}>Documentos do Paciente ({selectedPatient.documents.length})</div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:10 }}>
+                    {selectedPatient.documents.map(doc => (
+                      <div key={doc.id} style={{ border:"1px solid #E2E8F0", borderRadius:10, padding:10, width:140, position:"relative" }}>
+                        {doc.type?.startsWith("image/") ? (
+                          <img src={doc.data} alt={doc.name} onClick={() => setViewingPhoto(doc.data)} style={{ width:"100%", height:80, objectFit:"cover", borderRadius:6, cursor:"pointer", display:"block" }} />
+                        ) : (
+                          <div onClick={() => { const a=document.createElement("a"); a.href=doc.data; a.download=doc.name; a.click(); }} style={{ width:"100%", height:80, background:"#F8FAFC", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, cursor:"pointer" }}>{fileIcon(doc.type)}</div>
+                        )}
+                        <div style={{ fontSize:10, color:"#64748B", marginTop:6, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={doc.name}>{doc.name}</div>
+                        <div style={{ fontSize:9, color:"#94A3B8" }}>{formatSize(doc.size)} · {doc.uploadedByName}</div>
+                        {isAdmin && <button onClick={() => deleteDoc(doc.id)} style={{ position:"absolute", top:4, right:4, background:"rgba(239,68,68,0.9)", border:"none", borderRadius:"50%", width:18, height:18, color:"#fff", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>×</button>}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
-              {selectedPatient.records.map(rec => {
-                const spec = SPECIALTIES[rec.specialty];
-                return (
-                  <div key={rec.id} style={{ ...cardStyle, cursor: "default" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 10 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <span style={{
-                          background: spec?.color + "18", color: spec?.color,
-                          padding: "4px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700,
-                        }}>{spec?.icon} {spec?.label}</span>
-                        <span style={{ fontSize: 13, color: "#64748B", fontWeight: 600 }}>
-                          {formatDate(rec.date + "T12:00:00")}
-                        </span>
-                      </div>
-                      <button onClick={() => { if (confirm("Excluir este atendimento?")) deleteRecord(rec.id); }}
-                        style={{ background: "none", border: "none", color: "#CBD5E1", cursor: "pointer", fontSize: 16 }}>🗑️</button>
-                    </div>
-                    <div style={{ marginBottom: 6 }}>
-                      {rec.procedures.map(pr => (
-                        <Badge key={pr} text={pr} color={spec?.color || "#64748B"} />
-                      ))}
-                    </div>
-                    {rec.teeth?.length > 0 && (
-                      <div style={{ fontSize: 12, color: "#64748B", marginBottom: 4 }}>
-                        <strong>Dentes:</strong> {rec.teeth.sort((a, b) => a - b).join(", ")}
-                      </div>
-                    )}
-                    {rec.value && (
-                      <div style={{ fontSize: 12, color: "#64748B", marginBottom: 4 }}>
-                        <strong>Valor:</strong> R$ {rec.value}
-                      </div>
-                    )}
-                    {rec.notes && (
-                      <div style={{ fontSize: 13, color: "#475569", marginTop: 8, padding: "10px 12px", background: "#F8FAFC", borderRadius: 8, borderLeft: `3px solid ${spec?.color || "#CBD5E1"}` }}>
-                        {rec.notes}
-                      </div>
-                    )}
-                    {rec.wireInfo && (rec.wireInfo.material || rec.wireInfo.format || rec.wireInfo.gauge) && (
-                      <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 12, color: "#0369A1", fontWeight: 600 }}>🔩 Fio:</span>
-                        {rec.wireInfo.material && <Badge text={rec.wireInfo.material} color="#0EA5E9" />}
-                        {rec.wireInfo.format && <Badge text={rec.wireInfo.format} color="#0EA5E9" />}
-                        {rec.wireInfo.gauge && <Badge text={rec.wireInfo.gauge} color="#0EA5E9" />}
-                      </div>
-                    )}
-                    {rec.photos?.length > 0 && (
-                      <div style={{ marginTop: 10 }}>
-                        <div style={{ fontSize: 12, color: "#64748B", fontWeight: 600, marginBottom: 6 }}>📷 Fotos Clínicas ({rec.photos.length})</div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                          {rec.photos.map(photo => (
-                            <div key={photo.id} onClick={() => setViewingPhoto(photo.data)} style={{
-                              width: 64, height: 64, borderRadius: 8, overflow: "hidden",
-                              border: "1px solid #E2E8F0", cursor: "pointer",
-                            }}>
-                              <img src={photo.data} alt={photo.name} style={{
-                                width: "100%", height: "100%", objectFit: "cover", display: "block",
-                              }} />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {rec.nextAppointment && (
-                      <div style={{ fontSize: 12, color: "#0EA5E9", marginTop: 8, fontWeight: 600 }}>
-                        📅 Próxima consulta: {formatDate(rec.nextAppointment + "T12:00:00")}
-                      </div>
-                    )}
-                    {/* Signature display */}
-                    {rec.signature ? (
-                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed #E2E8F0" }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <span style={{ fontSize: 12, color: "#10B981", fontWeight: 600 }}>✅ Assinado pelo paciente</span>
-                          <button onClick={() => setViewingSignature(rec.signature)} style={{
-                            background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 6,
-                            padding: "4px 10px", fontSize: 11, color: "#16A34A", cursor: "pointer", fontWeight: 600,
-                          }}>Ver assinatura</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ marginTop: 10, fontSize: 11, color: "#F59E0B", fontWeight: 600 }}>
-                        ⚠️ Sem assinatura
-                      </div>
-                    )}
+              {/* Tabs */}
+              <div style={{ borderBottom:"2px solid #E2E8F0", marginBottom:16, display:"flex" }}>
+                <button className={`tab-btn ${patientTab==="orto"?"active":""}`} onClick={() => setPatientTab("orto")} style={patientTab==="orto"?{color:"#0EA5E9", borderBottomColor:"#0EA5E9"}:{}}>
+                  🦷 Ortodontia ({selectedPatient.records.filter(r=>r.tipo_atendimento==="ORTODONTIA").length})
+                </button>
+                <button className={`tab-btn ${patientTab==="geral"?"active":""}`} onClick={() => setPatientTab("geral")} style={patientTab==="geral"?{color:"#10B981", borderBottomColor:"#10B981"}:{}}>
+                  Clínico/Outros ({selectedPatient.records.filter(r=>r.tipo_atendimento!=="ORTODONTIA").length})
+                </button>
+              </div>
+
+              {/* Records */}
+              {(() => {
+                const recs = selectedPatient.records.filter(r => patientTab==="orto" ? r.tipo_atendimento==="ORTODONTIA" : r.tipo_atendimento!=="ORTODONTIA");
+                if (recs.length === 0) return (
+                  <div style={{ textAlign:"center", padding:40, color:"#94A3B8", background:"#fff", borderRadius:14, border:"1px solid #E2E8F0" }}>
+                    <div style={{ fontSize:13 }}>Nenhum atendimento de {patientTab==="orto"?"ortodontia":"clínico geral"} registrado</div>
                   </div>
                 );
-              })}
+                return recs.map(rec => {
+                  const spec = SPECIALTIES[rec.specialty];
+                  return (
+                    <div key={rec.id} style={cardStyle}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start", marginBottom:10 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                          <span style={{ background:spec?.color+"18", color:spec?.color, padding:"4px 10px", borderRadius:8, fontSize:12, fontWeight:700 }}>{spec?.icon} {spec?.label}</span>
+                          <span style={{ fontSize:13, color:"#64748B", fontWeight:600 }}>{formatDate(rec.date+"T12:00:00")}</span>
+                          {rec.atendimento_fora_da_responsabilidade && <span style={{ background:"#FEF3C7", color:"#D97706", padding:"3px 8px", borderRadius:6, fontSize:10, fontWeight:700 }}>FORA DA RESP.</span>}
+                        </div>
+                        <button onClick={() => { if (confirm("Excluir este atendimento?")) deleteRecord(rec.id); }}
+                          style={{ background:"none", border:"none", color:"#CBD5E1", cursor:"pointer", fontSize:14 }}>🗑️</button>
+                      </div>
+                      <div style={{ fontSize:11, color:"#94A3B8", marginBottom:6 }}>
+                        Atendente: <strong style={{ color:"#475569" }}>{getUserName(rec.dentista_atendente_id)}</strong>
+                        {rec.atendimento_fora_da_responsabilidade && <span> · Resp. vigente: <strong style={{ color:"#475569" }}>{getUserName(rec.dentista_responsavel_no_momento_id)}</strong></span>}
+                        {rec.motivo_fora && <span> · Motivo: {rec.motivo_fora}</span>}
+                      </div>
+                      <div style={{ marginBottom:6 }}>
+                        {rec.procedures.map(pr => <Badge key={pr} text={pr} color={spec?.color || "#64748B"} />)}
+                      </div>
+                      {rec.teeth?.length > 0 && <div style={{ fontSize:12, color:"#64748B", marginBottom:4 }}><strong>Dentes:</strong> {rec.teeth.sort((a,b)=>a-b).join(", ")}</div>}
+                      {rec.wireInfo && (rec.wireInfo.material || rec.wireInfo.format || rec.wireInfo.gauge) && (
+                        <div style={{ marginTop:6, display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
+                          <span style={{ fontSize:12, color:"#0369A1", fontWeight:600 }}>Fio:</span>
+                          {rec.wireInfo.material && <Badge text={rec.wireInfo.material} color="#0EA5E9" />}
+                          {rec.wireInfo.format && <Badge text={rec.wireInfo.format} color="#0EA5E9" />}
+                          {rec.wireInfo.gauge && <Badge text={rec.wireInfo.gauge} color="#0EA5E9" />}
+                        </div>
+                      )}
+                      {rec.value && <div style={{ fontSize:12, color:"#64748B", marginTop:4 }}><strong>Valor:</strong> R$ {rec.value}</div>}
+                      {rec.notes && <div style={{ fontSize:13, color:"#475569", marginTop:8, padding:"10px 12px", background:"#F8FAFC", borderRadius:8, borderLeft:`3px solid ${spec?.color||"#CBD5E1"}` }}>{rec.notes}</div>}
+                      {rec.photos?.length > 0 && (
+                        <div style={{ marginTop:10 }}>
+                          <div style={{ fontSize:12, color:"#64748B", fontWeight:600, marginBottom:6 }}>Fotos ({rec.photos.length})</div>
+                          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                            {rec.photos.map(ph => (
+                              <div key={ph.id} onClick={() => setViewingPhoto(ph.data)} style={{ width:56, height:56, borderRadius:8, overflow:"hidden", border:"1px solid #E2E8F0", cursor:"pointer" }}>
+                                <img src={ph.data} alt={ph.name} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {rec.nextAppointment && <div style={{ fontSize:12, color:"#0EA5E9", marginTop:8, fontWeight:600 }}>Próxima consulta: {formatDate(rec.nextAppointment+"T12:00:00")}</div>}
+                      {rec.signature ? (
+                        <div style={{ marginTop:10, paddingTop:10, borderTop:"1px dashed #E2E8F0", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                          <span style={{ fontSize:12, color:"#10B981", fontWeight:600 }}>Assinado</span>
+                          <button onClick={() => setViewingSignature(rec.signature)} style={{ background:"#F0FDF4", border:"1px solid #BBF7D0", borderRadius:6, padding:"4px 10px", fontSize:11, color:"#16A34A", cursor:"pointer", fontWeight:600 }}>Ver assinatura</button>
+                        </div>
+                      ) : (
+                        <div style={{ marginTop:8, fontSize:11, color:"#F59E0B", fontWeight:600 }}>Sem assinatura</div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
+
+          {/* ═══ USER MANAGEMENT ═══ */}
+          {view === "users" && isAdmin && (
+            <div style={{ padding:"20px 24px", maxWidth:800, margin:"0 auto" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+                <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A" }}>Gestão de Usuários</h2>
+                <button onClick={() => { setUserForm({ id:"", name:"", login:"", password:"", role:"dentista", active:true }); setEditingUserId(null); setShowUserForm(true); }} style={btnPrimary}>+ Novo Usuário</button>
+              </div>
+              {users.map(u => (
+                <div key={u.id} style={{ ...cardStyle, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <div>
+                    <div style={{ fontSize:15, fontWeight:700 }}>{u.name} {!u.active && <span style={{ fontSize:11, color:"#EF4444", fontWeight:600 }}>(Inativo)</span>}</div>
+                    <div style={{ fontSize:12, color:"#64748B" }}>Login: {u.login} · Perfil: {ROLE_LABELS[u.role]}</div>
+                  </div>
+                  {u.id !== "admin1" && (
+                    <button onClick={() => { setUserForm({ id:u.id, name:u.name, login:u.login, password:"", role:u.role, active:u.active }); setEditingUserId(u.id); setShowUserForm(true); }} style={{ ...btnSecondary, fontSize:12, padding:"6px 12px" }}>Editar</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ═══ AUDIT LOG ═══ */}
+          {view === "audit" && isAdmin && (
+            <div style={{ padding:"20px 24px", maxWidth:900, margin:"0 auto" }}>
+              <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A", marginBottom:16 }}>Log de Auditoria</h2>
+              <input placeholder="Filtrar por usuário, ação, paciente..." value={auditFilter} onChange={e => setAuditFilter(e.target.value)}
+                style={{ width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #CBD5E1", fontSize:14, outline:"none", background:"#fff", boxSizing:"border-box", marginBottom:16 }} />
+              <div style={{ maxHeight:"70vh", overflowY:"auto" }}>
+                {auditLogs.filter(l => {
+                  if (!auditFilter) return true;
+                  const f = auditFilter.toLowerCase();
+                  return l.userName?.toLowerCase().includes(f) || l.action?.toLowerCase().includes(f) || l.targetName?.toLowerCase().includes(f) || l.details?.toLowerCase().includes(f);
+                }).slice(0, 200).map(l => (
+                  <div key={l.id} style={{ padding:"10px 14px", borderBottom:"1px solid #F1F5F9", fontSize:13 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
+                      <div>
+                        <span style={{ fontWeight:700, color:"#0F172A" }}>{l.userName}</span>
+                        <span style={{ color:"#64748B" }}> · {l.action}</span>
+                        {l.targetName && <span style={{ color:"#64748B" }}> · {l.targetName}</span>}
+                      </div>
+                      <span style={{ fontSize:11, color:"#94A3B8", whiteSpace:"nowrap", marginLeft:10 }}>{formatDateTime(l.timestamp)}</span>
+                    </div>
+                    {l.details && <div style={{ fontSize:12, color:"#94A3B8", marginTop:2 }}>{l.details}</div>}
+                  </div>
+                ))}
+                {auditLogs.length === 0 && <div style={{ textAlign:"center", padding:40, color:"#94A3B8" }}>Nenhum registro de auditoria</div>}
+              </div>
             </div>
           )}
 
           {/* ═══ NEW PATIENT MODAL ═══ */}
-          <Modal isOpen={showNewPatient} onClose={() => setShowNewPatient(false)} title="Novo Paciente">
-            <Input label="Nome Completo *" value={npForm.name} onChange={e => setNpForm({ ...npForm, name: e.target.value })} placeholder="Nome do paciente" />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Input label="Data de Nascimento" type="date" value={npForm.birthDate} onChange={e => setNpForm({ ...npForm, birthDate: e.target.value })} />
-              <Input label="Telefone" value={npForm.phone} onChange={e => setNpForm({ ...npForm, phone: e.target.value })} placeholder="(00) 00000-0000" />
+          <Modal isOpen={showNewPatient} onClose={() => setShowNewPatient(false)} title="Novo Paciente" wide>
+            <Input label="Nome Completo *" value={npForm.name} onChange={e => setNpForm({...npForm, name:e.target.value})} placeholder="Nome do paciente" />
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+              <Input label="Data de Nascimento" type="date" value={npForm.birthDate} onChange={e => setNpForm({...npForm, birthDate:e.target.value})} />
+              <Input label="Telefone" value={npForm.phone} onChange={e => setNpForm({...npForm, phone:e.target.value})} placeholder="(00) 00000-0000" />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Input label="CPF" value={npForm.cpf} onChange={e => setNpForm({ ...npForm, cpf: e.target.value })} placeholder="000.000.000-00" />
-              <Input label="Email" type="email" value={npForm.email} onChange={e => setNpForm({ ...npForm, email: e.target.value })} placeholder="email@exemplo.com" />
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+              <Input label="CPF" value={npForm.cpf} onChange={e => setNpForm({...npForm, cpf:e.target.value})} placeholder="000.000.000-00" />
+              <Input label="Email" type="email" value={npForm.email} onChange={e => setNpForm({...npForm, email:e.target.value})} placeholder="email@exemplo.com" />
             </div>
-            <Input label="Endereço" value={npForm.address} onChange={e => setNpForm({ ...npForm, address: e.target.value })} placeholder="Endereço completo" />
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+            <Input label="Endereço" value={npForm.address} onChange={e => setNpForm({...npForm, address:e.target.value})} placeholder="Endereço completo" />
+            <div style={{ marginTop:8, paddingTop:16, borderTop:"2px dashed #E2E8F0" }}>
+              <div style={{ fontSize:14, fontWeight:700, color:"#334155", marginBottom:12 }}>Responsáveis *</div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                <Select label="Responsável Clínico *" value={npForm.responsavel_clinico_id}
+                  onChange={e => setNpForm({...npForm, responsavel_clinico_id:e.target.value})} options={allUserOpts} />
+                <Select label="Responsável Ortodontia *" value={npForm.responsavel_orto_id}
+                  onChange={e => setNpForm({...npForm, responsavel_orto_id:e.target.value})} options={allUserOpts} />
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
               <button onClick={() => setShowNewPatient(false)} style={btnSecondary}>Cancelar</button>
-              <button onClick={createPatient} style={btnPrimary}>Cadastrar Paciente</button>
+              <button onClick={createPatient} style={{ ...btnPrimary, opacity:(!npForm.name.trim()||!npForm.responsavel_clinico_id||!npForm.responsavel_orto_id)?0.5:1 }}>Cadastrar Paciente</button>
+            </div>
+          </Modal>
+
+          {/* ═══ NEW RECORD MODAL ═══ */}
+          <Modal isOpen={showNewRecord} onClose={() => { setShowNewRecord(false); setNrForm({...emptyNrForm}); }} title="Novo Atendimento" wide>
+            {/* Step 1: Tipo */}
+            <div style={{ marginBottom:16 }}>
+              <label style={{ display:"block", fontSize:13, fontWeight:600, color:"#475569", marginBottom:8 }}>Tipo de Atendimento *</label>
+              <div style={{ display:"flex", gap:12 }}>
+                <div className={`tipo-card ${nrForm.tipo_atendimento==="ORTODONTIA"?"selected":""}`}
+                  onClick={() => setNrForm({...emptyNrForm, date:nrForm.date, tipo_atendimento:"ORTODONTIA", specialty:"ortodontia"})}
+                  style={{ color:"#0EA5E9", borderColor:nrForm.tipo_atendimento==="ORTODONTIA"?"#0EA5E9":"#E2E8F0", background:nrForm.tipo_atendimento==="ORTODONTIA"?"#F0F9FF":"#fff" }}>
+                  <div style={{ fontSize:28 }}>🦷</div>
+                  <div style={{ fontWeight:700, marginTop:4 }}>Ortodontia</div>
+                </div>
+                <div className={`tipo-card ${nrForm.tipo_atendimento==="GERAL"?"selected":""}`}
+                  onClick={() => setNrForm({...emptyNrForm, date:nrForm.date, tipo_atendimento:"GERAL", specialty:""})}
+                  style={{ color:"#10B981", borderColor:nrForm.tipo_atendimento==="GERAL"?"#10B981":"#E2E8F0", background:nrForm.tipo_atendimento==="GERAL"?"#F0FDF4":"#fff" }}>
+                  <div style={{ fontSize:28 }}>🩺</div>
+                  <div style={{ fontWeight:700, marginTop:4 }}>Clínico / Outros</div>
+                </div>
+              </div>
+            </div>
+
+            {nrForm.tipo_atendimento && (
+              <>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                  <Input label="Data do Atendimento" type="date" value={nrForm.date} onChange={e => setNrForm({...nrForm, date:e.target.value})} />
+                  {nrForm.tipo_atendimento === "GERAL" && (
+                    <Select label="Especialidade *" value={nrForm.specialty}
+                      onChange={e => setNrForm({...nrForm, specialty:e.target.value, procedures:[]})}
+                      options={geralSpecOpts} />
+                  )}
+                  {nrForm.tipo_atendimento === "ORTODONTIA" && (
+                    <div style={{ marginBottom:14 }}>
+                      <label style={{ display:"block", fontSize:13, fontWeight:600, color:"#475569", marginBottom:5 }}>Especialidade</label>
+                      <div style={{ padding:"10px 14px", borderRadius:10, border:"1.5px solid #BAE6FD", background:"#F0F9FF", fontSize:14, color:"#0369A1", fontWeight:600 }}>🦷 Ortodontia</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Procedures */}
+                {nrForm.specialty && (
+                  <div style={{ marginBottom:14 }}>
+                    <label style={{ display:"block", fontSize:13, fontWeight:600, color:"#475569", marginBottom:8 }}>Procedimentos Realizados *</label>
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:6, background:"#F8FAFC", borderRadius:12, padding:12, border:"1px solid #E2E8F0", maxHeight:200, overflowY:"auto" }}>
+                      {SPECIALTIES[nrForm.specialty]?.procedures.map(proc => {
+                        const isSel = nrForm.procedures.includes(proc);
+                        const col = SPECIALTIES[nrForm.specialty]?.color;
+                        return (<button key={proc} onClick={() => toggleProcedure(proc)} style={{ padding:"6px 12px", borderRadius:8, fontSize:12, fontWeight:600, border:isSel?`2px solid ${col}`:"1.5px solid #CBD5E1", background:isSel?col+"15":"#fff", color:isSel?col:"#475569", cursor:"pointer", transition:"all 0.15s" }}>
+                          {isSel?"✓ ":""}{proc}
+                        </button>);
+                      })}
+                    </div>
+                    {nrForm.procedures.length > 0 && <div style={{ marginTop:8, fontSize:12, color:"#64748B" }}>{nrForm.procedures.length} procedimento(s)</div>}
+                  </div>
+                )}
+
+                {/* Wire Info */}
+                {needsWireInfo && (
+                  <div style={{ marginBottom:14, padding:14, background:"#F0F9FF", borderRadius:12, border:"1.5px solid #BAE6FD" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+                      <span style={{ fontSize:16 }}>🔩</span>
+                      <span style={{ fontSize:14, fontWeight:700, color:"#0369A1" }}>Informações do Fio Ortodôntico</span>
+                    </div>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+                      <Select label="Material" value={nrForm.wireInfo.material}
+                        onChange={e => setNrForm({...nrForm, wireInfo:{...nrForm.wireInfo, material:e.target.value}})}
+                        options={[{value:"",label:"Selecione..."}, ...WIRE_MATERIALS.map(m=>({value:m,label:m}))]} />
+                      <Select label="Formato" value={nrForm.wireInfo.format}
+                        onChange={e => setNrForm({...nrForm, wireInfo:{...nrForm.wireInfo, format:e.target.value}})}
+                        options={[{value:"",label:"Selecione..."}, ...WIRE_FORMATS.map(f=>({value:f,label:f}))]} />
+                      <Select label="Calibre" value={nrForm.wireInfo.gauge}
+                        onChange={e => setNrForm({...nrForm, wireInfo:{...nrForm.wireInfo, gauge:e.target.value}})}
+                        options={[{value:"",label:"Selecione..."}, ...WIRE_GAUGES.map(g=>({value:g,label:g}))]} />
+                    </div>
+                  </div>
+                )}
+
+                <ToothChart selected={nrForm.teeth} onToggle={toggleTooth} />
+                <Input label="Valor (R$)" type="number" value={nrForm.value} onChange={e => setNrForm({...nrForm, value:e.target.value})} placeholder="0,00" />
+                <Textarea label="Observações" value={nrForm.notes} onChange={e => setNrForm({...nrForm, notes:e.target.value})} placeholder="Detalhes do procedimento..." style={{ minHeight:80 }} />
+                <Input label="Próxima Consulta" type="date" value={nrForm.nextAppointment} onChange={e => setNrForm({...nrForm, nextAppointment:e.target.value})} />
+
+                {/* Photos */}
+                <div style={{ marginTop:8, paddingTop:16, borderTop:"2px dashed #E2E8F0" }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:"#334155", marginBottom:8 }}>Fotos Clínicas</div>
+                  <input ref={photoInputRef} type="file" accept="image/*" multiple onChange={handlePhotoUpload} style={{ display:"none" }} />
+                  <button onClick={() => photoInputRef.current?.click()} style={{ ...btnSecondary, fontSize:13, padding:"8px 16px", marginBottom:8 }}>Anexar Foto</button>
+                  {nrForm.photos.length > 0 && (
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginTop:8 }}>
+                      {nrForm.photos.map(ph => (
+                        <div key={ph.id} style={{ position:"relative", width:80, height:80, borderRadius:10, overflow:"hidden", border:"1.5px solid #CBD5E1" }}>
+                          <img src={ph.data} alt={ph.name} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
+                          <button onClick={() => setNrForm(prev => ({...prev, photos:prev.photos.filter(p=>p.id!==ph.id)}))} style={{ position:"absolute", top:2, right:2, background:"rgba(239,68,68,0.9)", border:"none", borderRadius:"50%", width:18, height:18, color:"#fff", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Signature */}
+                <div style={{ marginTop:8, paddingTop:16, borderTop:"2px dashed #E2E8F0" }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:"#334155", marginBottom:4 }}>Assinatura do Paciente</div>
+                  <p style={{ fontSize:12, color:"#64748B", marginBottom:10 }}>O paciente declara ciência e autoriza o tratamento.</p>
+                  <SignaturePad value={nrForm.signature} onChange={(sig) => setNrForm({...nrForm, signature:sig})} label="Desenhe a assinatura" />
+                </div>
+
+                <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
+                  <button onClick={() => { setShowNewRecord(false); setNrForm({...emptyNrForm}); }} style={btnSecondary}>Cancelar</button>
+                  <button onClick={tryAddRecord} style={{ ...btnPrimary, opacity:(!nrForm.specialty||nrForm.procedures.length===0)?0.5:1 }}>Registrar Atendimento</button>
+                </div>
+              </>
+            )}
+          </Modal>
+
+          {/* ═══ RESPONSIBILITY CHECK POPUP ═══ */}
+          <Modal isOpen={showRespCheck} onClose={() => { setShowRespCheck(false); setPendingRecord(null); }} title="Atenção: Paciente com Responsável">
+            {pendingRecord && (() => {
+              const respField = pendingRecord.tipo_atendimento === "ORTODONTIA" ? "responsavel_orto_id" : "responsavel_clinico_id";
+              const respName = getUserName(selectedPatient?.[respField]);
+              const tipoLabel = pendingRecord.tipo_atendimento === "ORTODONTIA" ? "Ortodontia" : "Clínico";
+              return (
+                <div>
+                  <div style={{ background:"#FEF3C7", border:"1px solid #FDE68A", borderRadius:12, padding:16, marginBottom:16 }}>
+                    <div style={{ fontSize:14, fontWeight:700, color:"#92400E", marginBottom:4 }}>Este paciente possui responsável de {tipoLabel}:</div>
+                    <div style={{ fontSize:18, fontWeight:800, color:"#78350F" }}>{respName}</div>
+                  </div>
+                  <p style={{ fontSize:13, color:"#475569", marginBottom:12 }}>Você ({currentUser.name}) não é o responsável vigente. Deseja prosseguir com o atendimento mesmo assim?</p>
+                  <Select label="Motivo (obrigatório)" value={respCheckMotivo}
+                    onChange={e => setRespCheckMotivo(e.target.value)}
+                    options={[{value:"",label:"Selecione o motivo..."},{value:"Cobertura",label:"Cobertura"},{value:"Urgência",label:"Urgência"},{value:"Encaixe",label:"Encaixe"},{value:"Substituição",label:"Substituição"},{value:"Outro",label:"Outro"}]} />
+                  <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
+                    <button onClick={() => { setShowRespCheck(false); setPendingRecord(null); }} style={btnSecondary}>Cancelar</button>
+                    <button onClick={confirmOutOfResp} style={{ ...btnPrimary, background:"linear-gradient(135deg,#F59E0B,#D97706)", opacity:!respCheckMotivo?0.5:1 }} disabled={!respCheckMotivo}>Confirmar Atendimento</button>
+                  </div>
+                </div>
+              );
+            })()}
+          </Modal>
+
+          {/* ═══ CHANGE RESPONSIBLE MODAL ═══ */}
+          <Modal isOpen={showChangeResp} onClose={() => setShowChangeResp(false)} title="Alterar Responsáveis" wide>
+            {selectedPatient && (
+              <div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                  <Select label="Responsável Clínico" value={respForm.responsavel_clinico_id}
+                    onChange={e => setRespForm({...respForm, responsavel_clinico_id:e.target.value})} options={allUserOpts} />
+                  <Select label="Responsável Ortodontia" value={respForm.responsavel_orto_id}
+                    onChange={e => setRespForm({...respForm, responsavel_orto_id:e.target.value})} options={allUserOpts} />
+                </div>
+                {selectedPatient.responsavelHistory?.length > 0 && (
+                  <div style={{ marginTop:16, paddingTop:16, borderTop:"1px solid #E2E8F0" }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:"#334155", marginBottom:8 }}>Histórico de Alterações</div>
+                    {selectedPatient.responsavelHistory.map((h, i) => (
+                      <div key={i} style={{ fontSize:12, color:"#64748B", padding:"6px 0", borderBottom:"1px solid #F1F5F9" }}>
+                        <strong>{formatDateTime(h.date)}</strong> — {h.changedByName} alterou {h.field==="responsavel_clinico_id"?"Resp. Clínico":"Resp. Orto"}: {h.fromName || "—"} → {h.toName}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
+                  <button onClick={() => setShowChangeResp(false)} style={btnSecondary}>Cancelar</button>
+                  <button onClick={saveResponsible} style={btnPrimary}>Salvar</button>
+                </div>
+              </div>
+            )}
+          </Modal>
+
+          {/* ═══ USER FORM MODAL ═══ */}
+          <Modal isOpen={showUserForm} onClose={() => { setShowUserForm(false); setEditingUserId(null); }} title={editingUserId ? "Editar Usuário" : "Novo Usuário"}>
+            <Input label="Nome Completo *" value={userForm.name} onChange={e => setUserForm({...userForm, name:e.target.value})} placeholder="Nome do profissional" />
+            <Input label="Login *" value={userForm.login} onChange={e => setUserForm({...userForm, login:e.target.value})} placeholder="Login de acesso" />
+            <Input label={editingUserId ? "Nova Senha (deixe vazio para manter)" : "Senha *"} type="password" value={userForm.password} onChange={e => setUserForm({...userForm, password:e.target.value})} placeholder="Senha" />
+            <Select label="Perfil *" value={userForm.role} onChange={e => setUserForm({...userForm, role:e.target.value})}
+              options={[{value:"dentista",label:"Dentista"},{value:"orto",label:"Ortodontista"},{value:"admin",label:"Administrador"}]} />
+            {editingUserId && (
+              <Select label="Status" value={userForm.active?"true":"false"} onChange={e => setUserForm({...userForm, active:e.target.value==="true"})}
+                options={[{value:"true",label:"Ativo"},{value:"false",label:"Inativo"}]} />
+            )}
+            <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
+              <button onClick={() => { setShowUserForm(false); setEditingUserId(null); }} style={btnSecondary}>Cancelar</button>
+              <button onClick={saveUser} style={btnPrimary}>{editingUserId ? "Salvar" : "Criar Usuário"}</button>
             </div>
           </Modal>
 
@@ -727,79 +1002,48 @@
           <Modal isOpen={showAnamnesis} onClose={() => setShowAnamnesis(false)} title="Anamnese Clínica" wide>
             {!editingAnamnesis ? (
               <div>
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-                  <button onClick={() => setEditingAnamnesis(true)} style={btnPrimary}>✏️ Editar</button>
+                <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:16 }}>
+                  <button onClick={() => setEditingAnamnesis(true)} style={btnPrimary}>Editar</button>
                 </div>
-                {[
-                  ["Alergias", anamnesisForm.allergies],
-                  ["Medicamentos em uso", anamnesisForm.medications],
-                  ["Doenças / Condições", anamnesisForm.diseases],
-                  ["Cirurgias anteriores", anamnesisForm.surgeries],
-                  ["Histórico familiar", anamnesisForm.familyHistory],
-                  ["Pressão arterial", anamnesisForm.bloodPressure],
-                ].map(([l, v]) => (
-                  <div key={l} style={{ marginBottom: 12 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>{l}</div>
-                    <div style={{ fontSize: 14, color: v ? "#0F172A" : "#CBD5E1", marginTop: 2 }}>{v || "Não informado"}</div>
+                {[["Alergias",anamnesisForm.allergies],["Medicamentos",anamnesisForm.medications],["Doenças",anamnesisForm.diseases],["Cirurgias",anamnesisForm.surgeries],["Histórico familiar",anamnesisForm.familyHistory],["Pressão arterial",anamnesisForm.bloodPressure]].map(([l,v]) => (
+                  <div key={l} style={{ marginBottom:12 }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:"#64748B", textTransform:"uppercase", letterSpacing:0.5 }}>{l}</div>
+                    <div style={{ fontSize:14, color:v?"#0F172A":"#CBD5E1", marginTop:2 }}>{v||"Não informado"}</div>
                   </div>
                 ))}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, marginTop: 12 }}>
-                  {[
-                    ["Tabagismo", anamnesisForm.smoker], ["Etilismo", anamnesisForm.drinker],
-                    ["Gestante", anamnesisForm.pregnant], ["Diabetes", anamnesisForm.diabetes],
-                    ["Cardiopatia", anamnesisForm.heartDisease], ["Hepatite", anamnesisForm.hepatitis],
-                    ["HIV", anamnesisForm.hiv], ["Sangramento", anamnesisForm.bleeding],
-                    ["Cicatrização", anamnesisForm.healing], ["Reação a anestesia", anamnesisForm.anesthesiaReaction],
-                  ].map(([l, v]) => (
-                    <div key={l} style={{
-                      padding: "8px 12px", borderRadius: 10,
-                      background: v === "Sim" || v === "Alterada" ? "#FEF2F2" : "#F0FDF4",
-                      border: `1px solid ${v === "Sim" || v === "Alterada" ? "#FECACA" : "#BBF7D0"}`,
-                    }}>
-                      <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600 }}>{l}</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: v === "Sim" || v === "Alterada" ? "#DC2626" : "#16A34A" }}>{v}</div>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:8, marginTop:12 }}>
+                  {[["Tabagismo",anamnesisForm.smoker],["Etilismo",anamnesisForm.drinker],["Gestante",anamnesisForm.pregnant],["Diabetes",anamnesisForm.diabetes],["Cardiopatia",anamnesisForm.heartDisease],["Hepatite",anamnesisForm.hepatitis],["HIV",anamnesisForm.hiv],["Sangramento",anamnesisForm.bleeding],["Cicatrização",anamnesisForm.healing],["Reação anestesia",anamnesisForm.anesthesiaReaction]].map(([l,v]) => (
+                    <div key={l} style={{ padding:"8px 12px", borderRadius:10, background:v==="Sim"||v==="Alterada"?"#FEF2F2":"#F0FDF4", border:`1px solid ${v==="Sim"||v==="Alterada"?"#FECACA":"#BBF7D0"}` }}>
+                      <div style={{ fontSize:11, color:"#64748B", fontWeight:600 }}>{l}</div>
+                      <div style={{ fontSize:14, fontWeight:700, color:v==="Sim"||v==="Alterada"?"#DC2626":"#16A34A" }}>{v}</div>
                     </div>
                   ))}
                 </div>
                 {anamnesisForm.observations && (
-                  <div style={{ marginTop: 16, padding: 14, background: "#FFFBEB", borderRadius: 10, border: "1px solid #FDE68A" }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#92400E", marginBottom: 4 }}>Observações</div>
-                    <div style={{ fontSize: 14, color: "#78350F", whiteSpace: "pre-wrap" }}>{anamnesisForm.observations}</div>
+                  <div style={{ marginTop:16, padding:14, background:"#FFFBEB", borderRadius:10, border:"1px solid #FDE68A" }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:"#92400E", marginBottom:4 }}>Observações</div>
+                    <div style={{ fontSize:14, color:"#78350F", whiteSpace:"pre-wrap" }}>{anamnesisForm.observations}</div>
                   </div>
                 )}
               </div>
             ) : (
               <div>
-                <Textarea label="Alergias" value={anamnesisForm.allergies} onChange={e => setAnamnesisForm({ ...anamnesisForm, allergies: e.target.value })} placeholder="Descreva alergias conhecidas..." />
-                <Textarea label="Medicamentos em uso" value={anamnesisForm.medications} onChange={e => setAnamnesisForm({ ...anamnesisForm, medications: e.target.value })} placeholder="Liste medicamentos..." />
-                <Textarea label="Doenças / Condições" value={anamnesisForm.diseases} onChange={e => setAnamnesisForm({ ...anamnesisForm, diseases: e.target.value })} placeholder="Condições de saúde..." />
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <Textarea label="Cirurgias anteriores" value={anamnesisForm.surgeries} onChange={e => setAnamnesisForm({ ...anamnesisForm, surgeries: e.target.value })} placeholder="Cirurgias realizadas..." />
-                  <Textarea label="Histórico familiar" value={anamnesisForm.familyHistory} onChange={e => setAnamnesisForm({ ...anamnesisForm, familyHistory: e.target.value })} placeholder="Doenças na família..." />
+                <Textarea label="Alergias" value={anamnesisForm.allergies} onChange={e => setAnamnesisForm({...anamnesisForm, allergies:e.target.value})} placeholder="Alergias conhecidas..." />
+                <Textarea label="Medicamentos" value={anamnesisForm.medications} onChange={e => setAnamnesisForm({...anamnesisForm, medications:e.target.value})} placeholder="Medicamentos em uso..." />
+                <Textarea label="Doenças" value={anamnesisForm.diseases} onChange={e => setAnamnesisForm({...anamnesisForm, diseases:e.target.value})} placeholder="Condições de saúde..." />
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                  <Textarea label="Cirurgias" value={anamnesisForm.surgeries} onChange={e => setAnamnesisForm({...anamnesisForm, surgeries:e.target.value})} placeholder="Cirurgias realizadas..." />
+                  <Textarea label="Histórico familiar" value={anamnesisForm.familyHistory} onChange={e => setAnamnesisForm({...anamnesisForm, familyHistory:e.target.value})} placeholder="Doenças na família..." />
                 </div>
-                <Input label="Pressão Arterial" value={anamnesisForm.bloodPressure} onChange={e => setAnamnesisForm({ ...anamnesisForm, bloodPressure: e.target.value })} placeholder="Ex: 120x80 mmHg" />
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10, marginTop: 8 }}>
-                  {[
-                    ["smoker", "Tabagismo"], ["drinker", "Etilismo"], ["pregnant", "Gestante"],
-                    ["diabetes", "Diabetes"], ["heartDisease", "Cardiopatia"], ["hepatitis", "Hepatite"],
-                    ["hiv", "HIV"], ["bleeding", "Tendência a sangramento"], ["anesthesiaReaction", "Reação a anestesia"],
-                  ].map(([key, label]) => (
-                    <Select key={key} label={label} value={anamnesisForm[key]}
-                      onChange={e => setAnamnesisForm({ ...anamnesisForm, [key]: e.target.value })}
-                      options={[{ value: "Não", label: "Não" }, { value: "Sim", label: "Sim" }]}
-                    />
+                <Input label="Pressão Arterial" value={anamnesisForm.bloodPressure} onChange={e => setAnamnesisForm({...anamnesisForm, bloodPressure:e.target.value})} placeholder="Ex: 120x80 mmHg" />
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:10, marginTop:8 }}>
+                  {[["smoker","Tabagismo"],["drinker","Etilismo"],["pregnant","Gestante"],["diabetes","Diabetes"],["heartDisease","Cardiopatia"],["hepatitis","Hepatite"],["hiv","HIV"],["bleeding","Sangramento"],["anesthesiaReaction","Reação anestesia"]].map(([k,l]) => (
+                    <Select key={k} label={l} value={anamnesisForm[k]} onChange={e => setAnamnesisForm({...anamnesisForm, [k]:e.target.value})} options={[{value:"Não",label:"Não"},{value:"Sim",label:"Sim"}]} />
                   ))}
-                  <Select label="Cicatrização" value={anamnesisForm.healing}
-                    onChange={e => setAnamnesisForm({ ...anamnesisForm, healing: e.target.value })}
-                    options={[{ value: "Normal", label: "Normal" }, { value: "Alterada", label: "Alterada" }]}
-                  />
+                  <Select label="Cicatrização" value={anamnesisForm.healing} onChange={e => setAnamnesisForm({...anamnesisForm, healing:e.target.value})} options={[{value:"Normal",label:"Normal"},{value:"Alterada",label:"Alterada"}]} />
                 </div>
-                <Textarea label="Observações Gerais" value={anamnesisForm.observations}
-                  onChange={e => setAnamnesisForm({ ...anamnesisForm, observations: e.target.value })}
-                  placeholder="Anotações adicionais sobre o paciente..."
-                  style={{ minHeight: 100 }}
-                />
-                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+                <Textarea label="Observações" value={anamnesisForm.observations} onChange={e => setAnamnesisForm({...anamnesisForm, observations:e.target.value})} placeholder="Anotações adicionais..." style={{ minHeight:100 }} />
+                <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
                   <button onClick={() => setEditingAnamnesis(false)} style={btnSecondary}>Cancelar</button>
                   <button onClick={saveAnamnesis} style={btnPrimary}>Salvar Anamnese</button>
                 </div>
@@ -807,185 +1051,14 @@
             )}
           </Modal>
 
-          {/* ═══ NEW RECORD MODAL ═══ */}
-          <Modal isOpen={showNewRecord} onClose={() => setShowNewRecord(false)} title="Novo Atendimento" wide>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <Input label="Data do Atendimento" type="date" value={nrForm.date} onChange={e => setNrForm({ ...nrForm, date: e.target.value })} />
-              <Select label="Especialidade *" value={nrForm.specialty}
-                onChange={e => setNrForm({ ...nrForm, specialty: e.target.value, procedures: [] })}
-                options={specOpts}
-              />
-            </div>
-
-            {nrForm.specialty && (
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 8 }}>
-                  Procedimentos Realizados *
-                </label>
-                <div style={{
-                  display: "flex", flexWrap: "wrap", gap: 6,
-                  background: "#F8FAFC", borderRadius: 12, padding: 12, border: "1px solid #E2E8F0",
-                  maxHeight: 200, overflowY: "auto",
-                }}>
-                  {SPECIALTIES[nrForm.specialty]?.procedures.map(proc => {
-                    const isSel = nrForm.procedures.includes(proc);
-                    const col = SPECIALTIES[nrForm.specialty]?.color;
-                    return (
-                      <button key={proc} onClick={() => toggleProcedure(proc)} style={{
-                        padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600,
-                        border: isSel ? `2px solid ${col}` : "1.5px solid #CBD5E1",
-                        background: isSel ? col + "15" : "#fff",
-                        color: isSel ? col : "#475569",
-                        cursor: "pointer", transition: "all 0.15s",
-                      }}>
-                        {isSel ? "✓ " : ""}{proc}
-                      </button>
-                    );
-                  })}
-                </div>
-                {nrForm.procedures.length > 0 && (
-                  <div style={{ marginTop: 8, fontSize: 12, color: "#64748B" }}>
-                    {nrForm.procedures.length} procedimento(s) selecionado(s)
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── WIRE INFO (Ortodontia only) ── */}
-            {needsWireInfo && (
-              <div style={{
-                marginBottom: 14, padding: 14, background: "#F0F9FF", borderRadius: 12,
-                border: "1.5px solid #BAE6FD",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                  <span style={{ fontSize: 16 }}>🔩</span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: "#0369A1" }}>Informações do Fio Ortodôntico</span>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-                  <Select label="Material do Fio" value={nrForm.wireInfo.material}
-                    onChange={e => setNrForm({ ...nrForm, wireInfo: { ...nrForm.wireInfo, material: e.target.value } })}
-                    options={[{ value: "", label: "Selecione..." }, ...WIRE_MATERIALS.map(m => ({ value: m, label: m }))]}
-                  />
-                  <Select label="Formato do Fio" value={nrForm.wireInfo.format}
-                    onChange={e => setNrForm({ ...nrForm, wireInfo: { ...nrForm.wireInfo, format: e.target.value } })}
-                    options={[{ value: "", label: "Selecione..." }, ...WIRE_FORMATS.map(f => ({ value: f, label: f }))]}
-                  />
-                  <Select label="Calibre do Fio" value={nrForm.wireInfo.gauge}
-                    onChange={e => setNrForm({ ...nrForm, wireInfo: { ...nrForm.wireInfo, gauge: e.target.value } })}
-                    options={[{ value: "", label: "Selecione..." }, ...WIRE_GAUGES.map(g => ({ value: g, label: g }))]}
-                  />
-                </div>
-              </div>
-            )}
-
-            <ToothChart selected={nrForm.teeth} onToggle={toggleTooth} />
-            <Input label="Valor (R$)" type="number" value={nrForm.value} onChange={e => setNrForm({ ...nrForm, value: e.target.value })} placeholder="0,00" />
-            <Textarea label="Observações do Atendimento" value={nrForm.notes}
-              onChange={e => setNrForm({ ...nrForm, notes: e.target.value })}
-              placeholder="Descreva detalhes do procedimento, observações clínicas, etc..."
-              style={{ minHeight: 90 }}
-            />
-            <Input label="Próxima Consulta" type="date" value={nrForm.nextAppointment}
-              onChange={e => setNrForm({ ...nrForm, nextAppointment: e.target.value })} />
-
-            {/* ── CLINICAL PHOTOS ── */}
-            <div style={{
-              marginTop: 8, paddingTop: 16, borderTop: "2px dashed #E2E8F0",
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                <span style={{ fontSize: 18 }}>📷</span>
-                <span style={{ fontSize: 15, fontWeight: 700, color: "#334155" }}>Fotos Clínicas</span>
-              </div>
-              <input
-                ref={photoInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handlePhotoUpload}
-                style={{ display: "none" }}
-              />
-              <button onClick={() => photoInputRef.current?.click()} style={{
-                ...btnSecondary, fontSize: 13, padding: "8px 16px", marginBottom: 10,
-              }}>
-                📎 Anexar Foto
-              </button>
-              {nrForm.photos.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8 }}>
-                  {nrForm.photos.map(photo => (
-                    <div key={photo.id} style={{
-                      position: "relative", width: 90, height: 90, borderRadius: 10,
-                      overflow: "hidden", border: "1.5px solid #CBD5E1",
-                    }}>
-                      <img src={photo.data} alt={photo.name} style={{
-                        width: "100%", height: "100%", objectFit: "cover", display: "block",
-                      }} />
-                      <button onClick={() => removePhoto(photo.id)} style={{
-                        position: "absolute", top: 3, right: 3,
-                        background: "rgba(239,68,68,0.9)", border: "none", borderRadius: "50%",
-                        width: 20, height: 20, color: "#fff", fontSize: 12,
-                        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                        padding: 0,
-                      }}>×</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* ── SIGNATURE PAD ── */}
-            <div style={{
-              marginTop: 8, paddingTop: 16, borderTop: "2px dashed #E2E8F0",
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                <span style={{ fontSize: 18 }}>✍️</span>
-                <span style={{ fontSize: 15, fontWeight: 700, color: "#334155" }}>Assinatura do Paciente</span>
-              </div>
-              <p style={{ fontSize: 12, color: "#64748B", marginBottom: 10, lineHeight: 1.5 }}>
-                O paciente declara estar ciente dos procedimentos realizados e autoriza o tratamento descrito acima.
-              </p>
-              <SignaturePad
-                value={nrForm.signature}
-                onChange={(sig) => setNrForm({ ...nrForm, signature: sig })}
-                label="Desenhe a assinatura abaixo"
-              />
-            </div>
-
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
-              <button onClick={() => setShowNewRecord(false)} style={btnSecondary}>Cancelar</button>
-              <button onClick={addRecord} style={{
-                ...btnPrimary,
-                opacity: (!nrForm.specialty || nrForm.procedures.length === 0) ? 0.5 : 1,
-              }}>Registrar Atendimento</button>
-            </div>
-          </Modal>
-
           {/* ═══ VIEW SIGNATURE MODAL ═══ */}
           <Modal isOpen={!!viewingSignature} onClose={() => setViewingSignature(null)} title="Assinatura do Paciente">
-            {viewingSignature && (
-              <div style={{ textAlign: "center" }}>
-                <div style={{
-                  background: "#FAFBFC", borderRadius: 12, border: "1px solid #E2E8F0",
-                  padding: 16, display: "inline-block",
-                }}>
-                  <img src={viewingSignature} alt="Assinatura" style={{ maxWidth: "100%", height: "auto" }} />
-                </div>
-                <p style={{ fontSize: 12, color: "#64748B", marginTop: 12 }}>
-                  Assinatura capturada digitalmente no momento do atendimento.
-                </p>
-              </div>
-            )}
+            {viewingSignature && (<div style={{ textAlign:"center" }}><div style={{ background:"#FAFBFC", borderRadius:12, border:"1px solid #E2E8F0", padding:16, display:"inline-block" }}><img src={viewingSignature} alt="Assinatura" style={{ maxWidth:"100%", height:"auto" }} /></div></div>)}
           </Modal>
 
           {/* ═══ VIEW PHOTO MODAL ═══ */}
-          <Modal isOpen={!!viewingPhoto} onClose={() => setViewingPhoto(null)} title="Foto Clínica">
-            {viewingPhoto && (
-              <div style={{ textAlign: "center" }}>
-                <img src={viewingPhoto} alt="Foto clínica" style={{
-                  maxWidth: "100%", maxHeight: "70vh", borderRadius: 12,
-                  border: "1px solid #E2E8F0",
-                }} />
-              </div>
-            )}
+          <Modal isOpen={!!viewingPhoto} onClose={() => setViewingPhoto(null)} title="Visualizar Imagem">
+            {viewingPhoto && (<div style={{ textAlign:"center" }}><img src={viewingPhoto} alt="Foto" style={{ maxWidth:"100%", maxHeight:"70vh", borderRadius:12, border:"1px solid #E2E8F0" }} /></div>)}
           </Modal>
         </div>
       );
