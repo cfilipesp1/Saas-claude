@@ -272,17 +272,101 @@
     function Badge({ text, color }) {
       return (<span style={{ display:"inline-flex", alignItems:"center", gap:4, background:color+"18", color, border:`1px solid ${color}40`, borderRadius:8, padding:"4px 10px", fontSize:12, fontWeight:600, margin:"2px 4px 2px 0" }}>{text}</span>);
     }
+    // SVG tooth shapes for visual odontogram
+    const ToothSVG = ({ type, number, isSelected, onClick }) => {
+      const baseColor = isSelected ? "#0EA5E9" : "#B8C5D6";
+      const fillColor = isSelected ? "#0EA5E920" : "transparent";
+      
+      // Determine tooth type based on number
+      const getToothType = (num) => {
+        const lastDigit = num % 10;
+        if (lastDigit === 8 || lastDigit === 7 || lastDigit === 6) return "molar";
+        if (lastDigit === 5 || lastDigit === 4) return "premolar";
+        if (lastDigit === 3) return "canine";
+        return "incisor"; // 1, 2
+      };
+      
+      const toothType = getToothType(number);
+      const isUpper = number >= 11 && number <= 28;
+      
+      // SVG paths for different tooth types
+      const paths = {
+        molar: isUpper 
+          ? "M5,15 L5,8 Q5,5 8,5 L22,5 Q25,5 25,8 L25,15 Q25,18 22,18 L20,18 L20,35 Q20,38 17,38 L13,38 Q10,38 10,35 L10,18 L8,18 Q5,18 5,15 Z M11,18 L11,32 L13,32 L13,18 Z M17,18 L17,32 L19,32 L19,18 Z"
+          : "M5,5 Q5,2 8,2 L22,2 Q25,2 25,5 L25,12 Q25,15 22,15 L20,15 L20,25 Q20,30 18,32 Q16,34 15,34 Q14,34 12,32 Q10,30 10,25 L10,15 L8,15 Q5,15 5,12 Z M11,15 L11,24 Q11,27 13,29 L13,15 Z M17,15 L17,29 Q19,27 19,24 L19,15 Z",
+        premolar: isUpper
+          ? "M7,15 L7,8 Q7,5 10,5 L20,5 Q23,5 23,8 L23,15 Q23,18 20,18 L18,18 L18,35 Q18,38 15,38 Q12,38 12,35 L12,18 L10,18 Q7,18 7,15 Z M13,18 L13,33 L17,33 L17,18 Z"
+          : "M7,5 Q7,2 10,2 L20,2 Q23,2 23,5 L23,12 Q23,15 20,15 L18,15 L18,28 Q18,32 15,34 Q12,32 12,28 L12,15 L10,15 Q7,15 7,12 Z M13,15 L13,27 Q13,29 15,30 Q17,29 17,27 L17,15 Z",
+        canine: isUpper
+          ? "M10,12 L10,6 Q10,3 13,3 L17,3 Q20,3 20,6 L20,12 Q20,15 18,17 L16,17 L16,36 Q16,39 15,39 Q14,39 14,36 L14,17 L12,17 Q10,15 10,12 Z"
+          : "M10,4 Q10,2 13,2 L17,2 Q20,2 20,4 L20,10 Q20,13 18,15 L16,15 L16,30 Q16,33 15,34 Q14,33 14,30 L14,15 L12,15 Q10,13 10,10 Z",
+        incisor: isUpper
+          ? "M9,12 L9,6 Q9,3 12,3 L18,3 Q21,3 21,6 L21,12 Q21,15 18,15 L17,15 L17,35 Q17,38 15,38 Q13,38 13,35 L13,15 L12,15 Q9,15 9,12 Z"
+          : "M10,5 Q10,2 13,2 L17,2 Q20,2 20,5 L20,11 Q20,14 17,14 L16,14 L16,30 Q16,33 15,34 Q14,33 14,30 L14,14 L13,14 Q10,14 10,11 Z",
+      };
+      
+      return (
+        <g onClick={onClick} style={{ cursor: "pointer" }}>
+          <path d={paths[toothType]} fill={fillColor} stroke={baseColor} strokeWidth="1.5" />
+        </g>
+      );
+    };
+
     function ToothChart({ selected, onToggle }) {
+      const upperTeeth = [18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28];
+      const lowerTeeth = [48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38];
+      
       return (<div style={{ marginBottom:14 }}>
         <label style={{ display:"block", fontSize:13, fontWeight:600, color:"#475569", marginBottom:8 }}>Dentes Envolvidos</label>
-        <div style={{ background:"#F8FAFC", borderRadius:12, padding:12, border:"1px solid #E2E8F0" }}>
-          {TOOTH_NUMBERS.map((row, ri) => (
-            <div key={ri} style={{ display:"flex", justifyContent:"center", gap:2, marginBottom:ri===0?4:0, flexWrap:"wrap", borderBottom:ri===0?"2px solid #CBD5E1":"none", paddingBottom:ri===0?6:0 }}>
-              {row.map(t => { const s=selected.includes(t); return (
-                <button key={t} onClick={()=>onToggle(t)} style={{ width:28, height:28, borderRadius:6, fontSize:10, fontWeight:700, border:s?"2px solid #0EA5E9":"1px solid #CBD5E1", background:s?"#0EA5E9":"#fff", color:s?"#fff":"#64748B", cursor:"pointer", transition:"all 0.15s", padding:0 }}>{t}</button>
-              ); })}
-            </div>
-          ))}
+        <div style={{ background:"#F8FAFC", borderRadius:12, padding:"20px 12px", border:"1px solid #E2E8F0" }}>
+          {/* Upper Arch */}
+          <svg viewBox="0 0 480 50" style={{ width:"100%", height:"auto", marginBottom:8 }}>
+            {upperTeeth.map((tooth, idx) => (
+              <g key={tooth} transform={`translate(${idx * 30}, 0)`}>
+                <ToothSVG 
+                  number={tooth} 
+                  isSelected={selected.includes(tooth)} 
+                  onClick={() => onToggle(tooth)}
+                />
+                <text 
+                  x="15" 
+                  y="48" 
+                  textAnchor="middle" 
+                  fontSize="9" 
+                  fontWeight="600"
+                  fill="#64748B"
+                >
+                  {tooth}
+                </text>
+              </g>
+            ))}
+          </svg>
+          
+          {/* Divider */}
+          <div style={{ borderTop:"1.5px dashed #CBD5E1", margin:"12px 0" }} />
+          
+          {/* Lower Arch */}
+          <svg viewBox="0 0 480 50" style={{ width:"100%", height:"auto", marginTop:8 }}>
+            {lowerTeeth.map((tooth, idx) => (
+              <g key={tooth} transform={`translate(${idx * 30}, 10)`}>
+                <text 
+                  x="15" 
+                  y="-2" 
+                  textAnchor="middle" 
+                  fontSize="9" 
+                  fontWeight="600"
+                  fill="#64748B"
+                >
+                  {tooth}
+                </text>
+                <ToothSVG 
+                  number={tooth} 
+                  isSelected={selected.includes(tooth)} 
+                  onClick={() => onToggle(tooth)}
+                />
+              </g>
+            ))}
+          </svg>
         </div>
       </div>);
     }
