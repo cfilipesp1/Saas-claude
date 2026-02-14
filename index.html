@@ -167,7 +167,7 @@
         atendimento_fora_da_responsabilidade: r.atendimento_fora_da_responsabilidade || false,
         motivo_fora: r.motivo_fora || "",
         photos: (r.photos || []).map(migrateFileToIDB),
-        wireInfo: r.wireInfo || { material: "", format: "", gauge: "" },
+        wireInfo: r.wireInfo?.upper ? r.wireInfo : { upper: { material: r.wireInfo?.material || "", format: r.wireInfo?.format || "", gauge: r.wireInfo?.gauge || "" }, lower: { material: "", format: "", gauge: "" } },
       })),
     });
 
@@ -425,7 +425,7 @@
 
       // ── Forms ──
       const [npForm, setNpForm] = useState({ codigo:"", name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
-      const emptyNrForm = { date:formatDateISO(new Date()), tipo_atendimento:"", specialty:"", procedures:[], teeth:[], notes:"", nextAppointment:"", value:"", signature:"", photos:[], wireInfo:{material:"",format:"",gauge:""} };
+      const emptyNrForm = { date:formatDateISO(new Date()), tipo_atendimento:"", specialty:"", procedures:[], teeth:[], notes:"", nextAppointment:"", signature:"", photos:[], wireInfo:{upper:{material:"",format:"",gauge:""},lower:{material:"",format:"",gauge:""}} };
       const [nrForm, setNrForm] = useState({...emptyNrForm});
       const [anamnesisForm, setAnamnesisForm] = useState({...defaultAnamnesis});
       const [userForm, setUserForm] = useState({ id:"", name:"", login:"", password:"", role:"dentista", active:true });
@@ -871,15 +871,27 @@
                         {rec.procedures.map(pr => <Badge key={pr} text={pr} color={spec?.color || "#64748B"} />)}
                       </div>
                       {rec.teeth?.length > 0 && <div style={{ fontSize:12, color:"#64748B", marginBottom:4 }}><strong>Dentes:</strong> {rec.teeth.sort((a,b)=>a-b).join(", ")}</div>}
-                      {rec.wireInfo && (rec.wireInfo.material || rec.wireInfo.format || rec.wireInfo.gauge) && (
-                        <div style={{ marginTop:6, display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
-                          <span style={{ fontSize:12, color:"#0369A1", fontWeight:600 }}>Fio:</span>
-                          {rec.wireInfo.material && <Badge text={rec.wireInfo.material} color="#0EA5E9" />}
-                          {rec.wireInfo.format && <Badge text={rec.wireInfo.format} color="#0EA5E9" />}
-                          {rec.wireInfo.gauge && <Badge text={rec.wireInfo.gauge} color="#0EA5E9" />}
+                      {rec.wireInfo && (rec.wireInfo.upper || rec.wireInfo.lower) && (
+                        <div style={{ marginTop:6 }}>
+                          {rec.wireInfo.upper && (rec.wireInfo.upper.material || rec.wireInfo.upper.format || rec.wireInfo.upper.gauge) && (
+                            <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center", marginBottom:4 }}>
+                              <span style={{ fontSize:12, color:"#0369A1", fontWeight:600 }}>Fio Superior:</span>
+                              {rec.wireInfo.upper.material && <Badge text={rec.wireInfo.upper.material} color="#0EA5E9" />}
+                              {rec.wireInfo.upper.format && <Badge text={rec.wireInfo.upper.format} color="#0EA5E9" />}
+                              {rec.wireInfo.upper.gauge && <Badge text={rec.wireInfo.upper.gauge} color="#0EA5E9" />}
+                            </div>
+                          )}
+                          {rec.wireInfo.lower && (rec.wireInfo.lower.material || rec.wireInfo.lower.format || rec.wireInfo.lower.gauge) && (
+                            <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
+                              <span style={{ fontSize:12, color:"#0369A1", fontWeight:600 }}>Fio Inferior:</span>
+                              {rec.wireInfo.lower.material && <Badge text={rec.wireInfo.lower.material} color="#0EA5E9" />}
+                              {rec.wireInfo.lower.format && <Badge text={rec.wireInfo.lower.format} color="#0EA5E9" />}
+                              {rec.wireInfo.lower.gauge && <Badge text={rec.wireInfo.lower.gauge} color="#0EA5E9" />}
+                            </div>
+                          )}
                         </div>
                       )}
-                      {rec.value && <div style={{ fontSize:12, color:"#64748B", marginTop:4 }}><strong>Valor:</strong> R$ {rec.value}</div>}
+
                       {rec.notes && <div style={{ fontSize:13, color:"#475569", marginTop:8, padding:"10px 12px", background:"#F8FAFC", borderRadius:8, borderLeft:`3px solid ${spec?.color||"#CBD5E1"}` }}>{rec.notes}</div>}
                       {rec.photos?.length > 0 && (
                         <div style={{ marginTop:10 }}>
@@ -1054,22 +1066,42 @@
                       <span style={{ fontSize:16 }}>🔩</span>
                       <span style={{ fontSize:14, fontWeight:700, color:"#0369A1" }}>Informações do Fio Ortodôntico</span>
                     </div>
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
-                      <Select label="Material" value={nrForm.wireInfo.material}
-                        onChange={e => setNrForm({...nrForm, wireInfo:{...nrForm.wireInfo, material:e.target.value}})}
-                        options={[{value:"",label:"Selecione..."}, ...WIRE_MATERIALS.map(m=>({value:m,label:m}))]} />
-                      <Select label="Formato" value={nrForm.wireInfo.format}
-                        onChange={e => setNrForm({...nrForm, wireInfo:{...nrForm.wireInfo, format:e.target.value}})}
-                        options={[{value:"",label:"Selecione..."}, ...WIRE_FORMATS.map(f=>({value:f,label:f}))]} />
-                      <Select label="Calibre" value={nrForm.wireInfo.gauge}
-                        onChange={e => setNrForm({...nrForm, wireInfo:{...nrForm.wireInfo, gauge:e.target.value}})}
-                        options={[{value:"",label:"Selecione..."}, ...WIRE_GAUGES.map(g=>({value:g,label:g}))]} />
+                    
+                    {/* Arcada Superior */}
+                    <div style={{ marginBottom:12 }}>
+                      <div style={{ fontSize:13, fontWeight:600, color:"#0369A1", marginBottom:8 }}>Arcada Superior</div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+                        <Select label="Material" value={nrForm.wireInfo.upper.material}
+                          onChange={e => setNrForm({...nrForm, wireInfo:{...nrForm.wireInfo, upper:{...nrForm.wireInfo.upper, material:e.target.value}}})}
+                          options={[{value:"",label:"Selecione..."}, ...WIRE_MATERIALS.map(m=>({value:m,label:m}))]} />
+                        <Select label="Formato" value={nrForm.wireInfo.upper.format}
+                          onChange={e => setNrForm({...nrForm, wireInfo:{...nrForm.wireInfo, upper:{...nrForm.wireInfo.upper, format:e.target.value}}})}
+                          options={[{value:"",label:"Selecione..."}, ...WIRE_FORMATS.map(f=>({value:f,label:f}))]} />
+                        <Select label="Calibre" value={nrForm.wireInfo.upper.gauge}
+                          onChange={e => setNrForm({...nrForm, wireInfo:{...nrForm.wireInfo, upper:{...nrForm.wireInfo.upper, gauge:e.target.value}}})}
+                          options={[{value:"",label:"Selecione..."}, ...WIRE_GAUGES.map(g=>({value:g,label:g}))]} />
+                      </div>
+                    </div>
+                    
+                    {/* Arcada Inferior */}
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:600, color:"#0369A1", marginBottom:8 }}>Arcada Inferior</div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+                        <Select label="Material" value={nrForm.wireInfo.lower.material}
+                          onChange={e => setNrForm({...nrForm, wireInfo:{...nrForm.wireInfo, lower:{...nrForm.wireInfo.lower, material:e.target.value}}})}
+                          options={[{value:"",label:"Selecione..."}, ...WIRE_MATERIALS.map(m=>({value:m,label:m}))]} />
+                        <Select label="Formato" value={nrForm.wireInfo.lower.format}
+                          onChange={e => setNrForm({...nrForm, wireInfo:{...nrForm.wireInfo, lower:{...nrForm.wireInfo.lower, format:e.target.value}}})}
+                          options={[{value:"",label:"Selecione..."}, ...WIRE_FORMATS.map(f=>({value:f,label:f}))]} />
+                        <Select label="Calibre" value={nrForm.wireInfo.lower.gauge}
+                          onChange={e => setNrForm({...nrForm, wireInfo:{...nrForm.wireInfo, lower:{...nrForm.wireInfo.lower, gauge:e.target.value}}})}
+                          options={[{value:"",label:"Selecione..."}, ...WIRE_GAUGES.map(g=>({value:g,label:g}))]} />
+                      </div>
                     </div>
                   </div>
                 )}
 
                 <ToothChart selected={nrForm.teeth} onToggle={toggleTooth} />
-                <Input label="Valor (R$)" type="number" value={nrForm.value} onChange={e => setNrForm({...nrForm, value:e.target.value})} placeholder="0,00" />
                 <Textarea label="Observações" value={nrForm.notes} onChange={e => setNrForm({...nrForm, notes:e.target.value})} placeholder="Detalhes do procedimento..." style={{ minHeight:80 }} />
                 <Input label="Próxima Consulta" type="date" value={nrForm.nextAppointment} onChange={e => setNrForm({...nrForm, nextAppointment:e.target.value})} />
 
