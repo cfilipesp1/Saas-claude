@@ -1380,7 +1380,7 @@
             <Input label="Login *" value={userForm.login} onChange={e => setUserForm({...userForm, login:e.target.value})} placeholder="Login de acesso" />
             <Input label={editingUserId ? "Nova Senha (deixe vazio para manter)" : "Senha *"} type="password" value={userForm.password} onChange={e => setUserForm({...userForm, password:e.target.value})} placeholder="Senha" />
             <Select label="Perfil *" value={userForm.role} onChange={e => setUserForm({...userForm, role:e.target.value})}
-              options={[{value:"dentista",label:"Dentista"},{value:"orto",label:"Ortodontista"},{value:"admin",label:"Administrador"}]} />
+              options={[{value:"dentista",label:"Dentista"},{value:"orto",label:"Ortodontista"},{value:"recepcao",label:"Recepcionista"},{value:"admin",label:"Administrador"}]} />
             {editingUserId && (
               <Select label="Status" value={userForm.active?"true":"false"} onChange={e => setUserForm({...userForm, active:e.target.value==="true"})}
                 options={[{value:"true",label:"Ativo"},{value:"false",label:"Inativo"}]} />
