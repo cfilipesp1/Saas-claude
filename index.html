@@ -29,8 +29,8 @@
     const { useState, useEffect, useRef, useCallback } = React;
 
     // ─── CONSTANTS ───────────────────────────────────────────────────────
-    const ROLES = { ADMIN: "admin", DENTISTA: "dentista", ORTO: "orto" };
-    const ROLE_LABELS = { admin: "Administrador", dentista: "Dentista", orto: "Ortodontista" };
+    const ROLES = { ADMIN: "admin", DENTISTA: "dentista", ORTO: "orto", RECEPCAO: "recepcao" };
+    const ROLE_LABELS = { admin: "Administrador", dentista: "Dentista", orto: "Ortodontista", recepcao: "Recepcionista" };
     const RECORD_TYPES = { ORTODONTIA: "ORTODONTIA", GERAL: "GERAL" };
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
     const ALLOWED_FILE_TYPES = ["image/jpeg","image/png","image/webp","image/gif","application/pdf",
@@ -159,6 +159,7 @@
       responsavel_orto_id: p.responsavel_orto_id || "",
       responsavelHistory: p.responsavelHistory || [],
       documents: (p.documents || []).map(migrateFileToIDB),
+      arrivalControl: p.arrivalControl || null,
       records: (p.records || []).map(r => ({
         ...r,
         tipo_atendimento: r.tipo_atendimento || (r.specialty === "ortodontia" ? "ORTODONTIA" : "GERAL"),
@@ -422,6 +423,8 @@
       const [showRespCheck, setShowRespCheck] = useState(false);
       const [showUserForm, setShowUserForm] = useState(false);
       const [showUploadDoc, setShowUploadDoc] = useState(false);
+      const [showArrivalControl, setShowArrivalControl] = useState(false);
+      const [arrivalPatientId, setArrivalPatientId] = useState(null);
 
       // ── Forms ──
       const [npForm, setNpForm] = useState({ codigo:"", name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
@@ -433,6 +436,7 @@
       const [respForm, setRespForm] = useState({ responsavel_clinico_id:"", responsavel_orto_id:"" });
       const [respCheckMotivo, setRespCheckMotivo] = useState("");
       const [pendingRecord, setPendingRecord] = useState(null);
+      const [arrivalForm, setArrivalForm] = useState({ dentista_id: "" });
 
       // ── Refs ──
       const photoInputRef = useRef(null);
@@ -513,6 +517,48 @@
         setSelectedPatient(updated);
         setShowChangeResp(false);
         addAudit("ALTERAR_RESPONSAVEL","paciente",selectedPatient.id,selectedPatient.name, changes.map(c => `${c.field==="responsavel_clinico_id"?"Clínico":"Orto"}: ${c.fromName} → ${c.toName}`).join("; "));
+      };
+
+      // ── Arrival Control ──
+      const handleArrival = (patientId) => {
+        setArrivalPatientId(patientId);
+        setArrivalForm({ dentista_id: "" });
+        setShowArrivalControl(true);
+      };
+
+      const confirmArrival = () => {
+        if (!arrivalForm.dentista_id) { alert("Selecione o dentista que irá atender."); return; }
+        const patient = patients.find(p => p.id === arrivalPatientId);
+        if (!patient) return;
+        
+        const arrivalData = {
+          arrivedAt: new Date().toISOString(),
+          dentista_id: arrivalForm.dentista_id,
+          dentista_name: getUserName(arrivalForm.dentista_id),
+          receptionist_id: currentUser.id,
+          receptionist_name: currentUser.name,
+          status: "aguardando"
+        };
+        
+        setPatients(prev => prev.map(p => p.id === arrivalPatientId ? {...p, arrivalControl: arrivalData} : p));
+        setShowArrivalControl(false);
+        setArrivalPatientId(null);
+        setArrivalForm({ dentista_id: "" });
+        addAudit("MARCAR_CHEGADA","paciente",patient.id,patient.name,`Dentista: ${arrivalData.dentista_name}`);
+      };
+
+      const startAttendance = (patientId) => {
+        const patient = patients.find(p => p.id === patientId);
+        if (!patient || !patient.arrivalControl) return;
+        
+        setPatients(prev => prev.map(p => p.id === patientId ? {...p, arrivalControl: {...p.arrivalControl, status: "em_atendimento", startedAt: new Date().toISOString()}} : p));
+        openPatient(patient);
+        addAudit("INICIAR_ATENDIMENTO","paciente",patient.id,patient.name,"");
+      };
+
+      const finishAttendance = (patientId) => {
+        setPatients(prev => prev.map(p => p.id === patientId ? {...p, arrivalControl: null} : p));
+        addAudit("FINALIZAR_ATENDIMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"","");
       };
 
       // ── Records ──
@@ -686,7 +732,7 @@
           {/* ── HEADER ── */}
           <div style={{ background:"linear-gradient(135deg,#0F172A 0%,#1E3A5F 100%)", color:"#fff", padding:"12px 24px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:100, flexWrap:"wrap", gap:8 }}>
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              {(view === "patient" || view === "users" || view === "audit") && (
+              {(view === "patient" || view === "users" || view === "audit" || view === "queue") && (
                 <button onClick={() => { setView("list"); setSelectedPatient(null); }} style={{ background:"rgba(255,255,255,0.12)", border:"none", borderRadius:8, width:36, height:36, color:"#fff", cursor:"pointer", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center" }}>←</button>
               )}
               <div>
@@ -695,6 +741,16 @@
               </div>
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+              {(currentUser.role === "dentista" || currentUser.role === "orto") && (
+                <button onClick={() => setView("queue")} style={{ background: view==="queue"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>
+                  ⏳ Fila de Atendimento
+                  {patients.filter(p => p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando").length > 0 && (
+                    <span style={{ background:"#10B981", borderRadius:"50%", width:18, height:18, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700 }}>
+                      {patients.filter(p => p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando").length}
+                    </span>
+                  )}
+                </button>
+              )}
               {isAdmin && (
                 <>
                   <button onClick={() => setView("users")} style={{ background: view==="users"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600 }}>Usuários</button>
@@ -727,26 +783,45 @@
                 </div>
               )}
               {filteredPatients.map(p => (
-                <div key={p.id} onClick={() => openPatient(p)} style={{...cardStyle, cursor:"pointer"}}
-                  onMouseEnter={e => e.currentTarget.style.borderColor="#0EA5E9"} onMouseLeave={e => e.currentTarget.style.borderColor="#E2E8F0"}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
-                    <div>
-                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                        {p.codigo && <span style={{ fontSize:11, fontWeight:700, color:"#0EA5E9", background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:6, padding:"2px 8px" }}>{p.codigo}</span>}
-                        <span style={{ fontSize:16, fontWeight:700 }}>{p.name}</span>
+                <div key={p.id} style={{...cardStyle, position:"relative"}}>
+                  <div onClick={() => openPatient(p)} style={{ cursor:"pointer" }}
+                    onMouseEnter={e => e.currentTarget.parentElement.style.borderColor="#0EA5E9"} 
+                    onMouseLeave={e => e.currentTarget.parentElement.style.borderColor="#E2E8F0"}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
+                      <div>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          {p.codigo && <span style={{ fontSize:11, fontWeight:700, color:"#0EA5E9", background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:6, padding:"2px 8px" }}>{p.codigo}</span>}
+                          <span style={{ fontSize:16, fontWeight:700 }}>{p.name}</span>
+                          {p.arrivalControl && (
+                            <span style={{ fontSize:10, fontWeight:700, color:"#10B981", background:"#D1FAE5", border:"1px solid #6EE7B7", borderRadius:6, padding:"2px 8px" }}>
+                              {p.arrivalControl.status === "aguardando" ? "⏳ Aguardando" : "👨‍⚕️ Em atendimento"}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize:12, color:"#64748B", marginTop:4 }}>
+                          {p.phone && `${p.phone}`}{p.cpf && ` · CPF: ${p.cpf}`}
+                        </div>
+                        <div style={{ fontSize:11, color:"#94A3B8", marginTop:4 }}>
+                          Clínico: <strong>{getUserName(p.responsavel_clinico_id)}</strong> · Orto: <strong>{getUserName(p.responsavel_orto_id)}</strong>
+                        </div>
+                        {p.arrivalControl && (
+                          <div style={{ fontSize:11, color:"#10B981", marginTop:4, fontWeight:600 }}>
+                            Dentista: {p.arrivalControl.dentista_name} · Chegada: {new Date(p.arrivalControl.arrivedAt).toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"})}
+                          </div>
+                        )}
                       </div>
-                      <div style={{ fontSize:12, color:"#64748B", marginTop:4 }}>
-                        {p.phone && `${p.phone}`}{p.cpf && ` · CPF: ${p.cpf}`}
+                      <div style={{ textAlign:"right" }}>
+                        <div style={{ fontSize:11, color:"#94A3B8" }}>{formatDate(p.createdAt)}</div>
+                        <div style={{ fontSize:12, fontWeight:700, color:"#0EA5E9", marginTop:4, background:"#0EA5E910", padding:"2px 8px", borderRadius:6 }}>{p.records.length} atend.</div>
                       </div>
-                      <div style={{ fontSize:11, color:"#94A3B8", marginTop:4 }}>
-                        Clínico: <strong>{getUserName(p.responsavel_clinico_id)}</strong> · Orto: <strong>{getUserName(p.responsavel_orto_id)}</strong>
-                      </div>
-                    </div>
-                    <div style={{ textAlign:"right" }}>
-                      <div style={{ fontSize:11, color:"#94A3B8" }}>{formatDate(p.createdAt)}</div>
-                      <div style={{ fontSize:12, fontWeight:700, color:"#0EA5E9", marginTop:4, background:"#0EA5E910", padding:"2px 8px", borderRadius:6 }}>{p.records.length} atend.</div>
                     </div>
                   </div>
+                  {currentUser.role === "recepcao" && !p.arrivalControl && (
+                    <button onClick={(e) => { e.stopPropagation(); handleArrival(p.id); }} 
+                      style={{ ...btnPrimary, marginTop:12, fontSize:13, padding:"8px 16px", width:"100%" }}>
+                      👋 Marcar Chegada
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -969,6 +1044,95 @@
                   </div>
                 ))}
                 {auditLogs.length === 0 && <div style={{ textAlign:"center", padding:40, color:"#94A3B8" }}>Nenhum registro de auditoria</div>}
+              </div>
+            </div>
+          )}
+
+          {/* ═══ QUEUE VIEW ═══ */}
+          {view === "queue" && (currentUser.role === "dentista" || currentUser.role === "orto") && (
+            <div style={{ padding:"20px 24px", maxWidth:800, margin:"0 auto" }}>
+              <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A", marginBottom:16 }}>Fila de Atendimento</h2>
+              
+              {/* Aguardando Atendimento */}
+              <div style={{ marginBottom:24 }}>
+                <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
+                  ⏳ Aguardando ({patients.filter(p => p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando").length})
+                </div>
+                {patients
+                  .filter(p => p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando")
+                  .sort((a, b) => new Date(a.arrivalControl.arrivedAt) - new Date(b.arrivalControl.arrivedAt))
+                  .map(p => (
+                    <div key={p.id} style={{ ...cardStyle, marginBottom:12 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
+                        <div style={{ flex:1 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                            {p.codigo && <span style={{ fontSize:11, fontWeight:700, color:"#0EA5E9", background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:6, padding:"2px 8px" }}>{p.codigo}</span>}
+                            <span style={{ fontSize:16, fontWeight:700 }}>{p.name}</span>
+                          </div>
+                          <div style={{ fontSize:12, color:"#64748B", marginBottom:4 }}>
+                            {p.phone && `${p.phone}`}{p.cpf && ` · CPF: ${p.cpf}`}
+                          </div>
+                          <div style={{ fontSize:12, color:"#10B981", fontWeight:600 }}>
+                            Chegada: {new Date(p.arrivalControl.arrivedAt).toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"})}
+                            {" · "}
+                            Registrado por: {p.arrivalControl.receptionist_name}
+                          </div>
+                        </div>
+                        <button onClick={() => startAttendance(p.id)} style={{ ...btnPrimary, fontSize:13, padding:"8px 16px", whiteSpace:"nowrap" }}>
+                          👨‍⚕️ Iniciar Atendimento
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                {patients.filter(p => p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando").length === 0 && (
+                  <div style={{ textAlign:"center", padding:40, color:"#94A3B8", background:"#F8FAFC", borderRadius:12, border:"1px solid #E2E8F0" }}>
+                    <div style={{ fontSize:48, marginBottom:8 }}>☕</div>
+                    <div style={{ fontSize:14, fontWeight:600 }}>Nenhum paciente aguardando</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Em Atendimento */}
+              <div>
+                <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
+                  👨‍⚕️ Em Atendimento ({patients.filter(p => p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "em_atendimento").length})
+                </div>
+                {patients
+                  .filter(p => p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "em_atendimento")
+                  .map(p => (
+                    <div key={p.id} style={{ ...cardStyle, marginBottom:12, borderColor:"#10B981" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
+                        <div style={{ flex:1 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                            {p.codigo && <span style={{ fontSize:11, fontWeight:700, color:"#0EA5E9", background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:6, padding:"2px 8px" }}>{p.codigo}</span>}
+                            <span style={{ fontSize:16, fontWeight:700 }}>{p.name}</span>
+                            <span style={{ fontSize:10, fontWeight:700, color:"#10B981", background:"#D1FAE5", border:"1px solid #6EE7B7", borderRadius:6, padding:"2px 8px" }}>
+                              👨‍⚕️ Em atendimento
+                            </span>
+                          </div>
+                          <div style={{ fontSize:12, color:"#64748B", marginBottom:4 }}>
+                            {p.phone && `${p.phone}`}{p.cpf && ` · CPF: ${p.cpf}`}
+                          </div>
+                          <div style={{ fontSize:12, color:"#10B981", fontWeight:600 }}>
+                            Início: {new Date(p.arrivalControl.startedAt).toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"})}
+                          </div>
+                        </div>
+                        <div style={{ display:"flex", gap:8 }}>
+                          <button onClick={() => openPatient(p)} style={{ ...btnSecondary, fontSize:13, padding:"8px 16px" }}>
+                            Ver Prontuário
+                          </button>
+                          <button onClick={() => finishAttendance(p.id)} style={{ ...btnPrimary, fontSize:13, padding:"8px 16px", background:"linear-gradient(135deg,#10B981,#059669)" }}>
+                            ✓ Finalizar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                {patients.filter(p => p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "em_atendimento").length === 0 && (
+                  <div style={{ textAlign:"center", padding:40, color:"#94A3B8", background:"#F8FAFC", borderRadius:12, border:"1px solid #E2E8F0" }}>
+                    <div style={{ fontSize:14, fontWeight:600 }}>Nenhum atendimento em andamento</div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1268,6 +1432,28 @@
           {/* ═══ VIEW PHOTO MODAL ═══ */}
           <Modal isOpen={!!viewingPhoto} onClose={() => setViewingPhoto(null)} title="Visualizar Imagem">
             {viewingPhoto && (<div style={{ textAlign:"center" }}><img src={viewingPhoto} alt="Foto" style={{ maxWidth:"100%", maxHeight:"70vh", borderRadius:12, border:"1px solid #E2E8F0" }} /></div>)}
+          </Modal>
+
+          {/* ═══ ARRIVAL CONTROL MODAL ═══ */}
+          <Modal isOpen={showArrivalControl} onClose={() => { setShowArrivalControl(false); setArrivalPatientId(null); }} title="Marcar Chegada do Paciente">
+            <div style={{ marginBottom:16, padding:14, background:"#F0F9FF", borderRadius:12, border:"1.5px solid #BAE6FD" }}>
+              <div style={{ fontSize:14, fontWeight:700, color:"#0369A1", marginBottom:4 }}>
+                Paciente: {patients.find(p => p.id === arrivalPatientId)?.name}
+              </div>
+              <div style={{ fontSize:12, color:"#64748B" }}>
+                Selecione o dentista ou ortodontista que irá atender este paciente.
+              </div>
+            </div>
+            <Select 
+              label="Dentista/Ortodontista *" 
+              value={arrivalForm.dentista_id}
+              onChange={e => setArrivalForm({...arrivalForm, dentista_id: e.target.value})}
+              options={dentistOpts}
+            />
+            <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
+              <button onClick={() => { setShowArrivalControl(false); setArrivalPatientId(null); }} style={btnSecondary}>Cancelar</button>
+              <button onClick={confirmArrival} style={btnPrimary}>👋 Confirmar Chegada</button>
+            </div>
           </Modal>
         </div>
       );
