@@ -441,6 +441,7 @@
       const [showFinanceiro, setShowFinanceiro] = useState(false);
       const [financeiroForm, setFinanceiroForm] = useState({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
       const [editingOrcamento, setEditingOrcamento] = useState(false);
+      const [tempOrcamento, setTempOrcamento] = useState("");
 
       // ── Refs ──
       const photoInputRef = useRef(null);
@@ -570,6 +571,7 @@
         setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, orcamento_total: parseFloat(valor) || 0}} : p));
         addAudit("ATUALIZAR_ORCAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Or\u00e7amento: R$ ${parseFloat(valor).toFixed(2)}`);
         setEditingOrcamento(false);
+        setTempOrcamento("");
       };
 
       const addPagamento = (patientId) => {
@@ -1496,7 +1498,7 @@
           </Modal>
 
           {/* ═══ FINANCEIRO MODAL ═══ */}
-          <Modal isOpen={showFinanceiro} onClose={() => { setShowFinanceiro(false); setEditingOrcamento(false); setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" }); }} title="Financeiro - Controle de Pagamentos" wide>
+          <Modal isOpen={showFinanceiro} onClose={() => { setShowFinanceiro(false); setEditingOrcamento(false); setTempOrcamento(""); setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" }); }} title="Financeiro - Controle de Pagamentos" wide>
             {selectedPatient && (
               <div>
                 {/* Orçamento Total */}
@@ -1504,14 +1506,14 @@
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
                     <div style={{ fontSize:16, fontWeight:700, color:"#1E40AF" }}>💵 Orçamento Total</div>
                     {!editingOrcamento && (
-                      <button onClick={() => setEditingOrcamento(true)} style={{...btnSecondary, fontSize:12, padding:"4px 12px"}}>✏️ Editar</button>
+                      <button onClick={() => { setTempOrcamento(selectedPatient.financeiro.orcamento_total.toString()); setEditingOrcamento(true); }} style={{...btnSecondary, fontSize:12, padding:"4px 12px"}}>✏️ Editar</button>
                     )}
                   </div>
                   {editingOrcamento ? (
                     <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-                      <Input label="" value={selectedPatient.financeiro.orcamento_total} onChange={e => setPatients(prev => prev.map(p => p.id === selectedPatient.id ? {...p, financeiro: {...p.financeiro, orcamento_total: e.target.value}} : p))} placeholder="0.00" type="number" step="0.01" />
-                      <button onClick={() => saveOrcamento(selectedPatient.id, selectedPatient.financeiro.orcamento_total)} style={{...btnPrimary, fontSize:13, padding:"8px 16px", whiteSpace:"nowrap"}}>✓ Salvar</button>
-                      <button onClick={() => setEditingOrcamento(false)} style={{...btnSecondary, fontSize:13, padding:"8px 16px"}}>×</button>
+                      <Input label="" value={tempOrcamento} onChange={e => setTempOrcamento(e.target.value)} placeholder="0.00" type="number" step="0.01" />
+                      <button onClick={() => saveOrcamento(selectedPatient.id, tempOrcamento)} style={{...btnPrimary, fontSize:13, padding:"8px 16px", whiteSpace:"nowrap"}}>✓ Salvar</button>
+                      <button onClick={() => { setEditingOrcamento(false); setTempOrcamento(""); }} style={{...btnSecondary, fontSize:13, padding:"8px 16px"}}>×</button>
                     </div>
                   ) : (
                     <div style={{ fontSize:28, fontWeight:800, color:"#1E40AF" }}>
