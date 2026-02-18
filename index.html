@@ -632,13 +632,19 @@
       };
 
       const saveRecord = (rec) => {
-        const updated = { ...selectedPatient, records: [rec, ...selectedPatient.records] };
+        // Limpa o controle de chegada ao registrar atendimento (finaliza o atendimento)
+        const updated = { 
+          ...selectedPatient, 
+          records: [rec, ...selectedPatient.records],
+          arrivalControl: null // Remove da fila ao finalizar atendimento
+        };
         setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
         setSelectedPatient(updated);
         setNrForm({...emptyNrForm});
         setShowNewRecord(false);
         addAudit("CRIAR_ATENDIMENTO","atendimento",rec.id,selectedPatient.name,
           `Tipo: ${rec.tipo_atendimento}, Especialidade: ${SPECIALTIES[rec.specialty]?.label}, Fora da resp: ${rec.atendimento_fora_da_responsabilidade?"SIM":"NÃO"}${rec.motivo_fora?", Motivo: "+rec.motivo_fora:""}`);
+        addAudit("FINALIZAR_ATENDIMENTO","paciente",selectedPatient.id,selectedPatient.name,"Atendimento finalizado e paciente removido da fila");
       };
 
       const deleteRecord = (recId) => {
