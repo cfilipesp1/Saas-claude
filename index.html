@@ -160,6 +160,7 @@
       responsavelHistory: p.responsavelHistory || [],
       documents: (p.documents || []).map(migrateFileToIDB),
       arrivalControl: p.arrivalControl || null,
+      financeiro: p.financeiro || { orcamento_total: 0, pagamentos: [] },
       records: (p.records || []).map(r => ({
         ...r,
         tipo_atendimento: r.tipo_atendimento || (r.specialty === "ortodontia" ? "ORTODONTIA" : "GERAL"),
@@ -437,6 +438,9 @@
       const [respCheckMotivo, setRespCheckMotivo] = useState("");
       const [pendingRecord, setPendingRecord] = useState(null);
       const [arrivalForm, setArrivalForm] = useState({ dentista_id: "" });
+      const [showFinanceiro, setShowFinanceiro] = useState(false);
+      const [financeiroForm, setFinanceiroForm] = useState({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
+      const [editingOrcamento, setEditingOrcamento] = useState(false);
 
       // ── Refs ──
       const photoInputRef = useRef(null);
@@ -559,6 +563,35 @@
       const finishAttendance = (patientId) => {
         setPatients(prev => prev.map(p => p.id === patientId ? {...p, arrivalControl: null} : p));
         addAudit("FINALIZAR_ATENDIMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"","");
+      };
+
+      // ── Financeiro ──
+      const saveOrcamento = (patientId, valor) => {
+        setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, orcamento_total: parseFloat(valor) || 0}} : p));
+        addAudit("ATUALIZAR_ORCAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Or\u00e7amento: R$ ${parseFloat(valor).toFixed(2)}`);
+        setEditingOrcamento(false);
+      };
+
+      const addPagamento = (patientId) => {
+        if (!financeiroForm.valor || parseFloat(financeiroForm.valor) <= 0) return;
+        const novoPagamento = {
+          id: generateId(),
+          data: financeiroForm.data,
+          valor: parseFloat(financeiroForm.valor),
+          forma_pagamento: financeiroForm.forma_pagamento,
+          observacao: financeiroForm.observacao,
+          registrado_por: currentUser.name,
+          registrado_em: new Date().toISOString()
+        };
+        setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: [...p.financeiro.pagamentos, novoPagamento]}} : p));
+        addAudit("ADICIONAR_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Valor: R$ ${novoPagamento.valor.toFixed(2)} - ${novoPagamento.forma_pagamento === "avista" ? "\u00c0 vista" : "Parcelado"}`);
+        setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
+      };
+
+      const removePagamento = (patientId, pagamentoId) => {
+        if (!confirm("Deseja realmente remover este pagamento?")) return;
+        setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: p.financeiro.pagamentos.filter(pg => pg.id !== pagamentoId)}} : p));
+        addAudit("REMOVER_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"","");
       };
 
       // ── Records ──
@@ -821,6 +854,11 @@
                       <div style={{ textAlign:"right" }}>
                         <div style={{ fontSize:11, color:"#94A3B8" }}>{formatDate(p.createdAt)}</div>
                         <div style={{ fontSize:12, fontWeight:700, color:"#0EA5E9", marginTop:4, background:"#0EA5E910", padding:"2px 8px", borderRadius:6 }}>{p.records.length} atend.</div>
+                        {(currentUser.role === "admin" || currentUser.role === "recepcao") && p.financeiro && p.financeiro.orcamento_total > 0 && (
+                          <div style={{ fontSize:11, fontWeight:700, color: p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + pg.valor, 0) > 0 ? "#EF4444" : "#10B981", marginTop:4, background: p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + pg.valor, 0) > 0 ? "#FEE2E2" : "#D1FAE5", padding:"2px 8px", borderRadius:6 }}>
+                            {p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + pg.valor, 0) > 0 ? "⚠️ Devendo" : "✓ Quitado"}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -875,6 +913,9 @@
               <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
                 <button onClick={() => { setAnamnesisForm({...defaultAnamnesis, ...selectedPatient.anamnesis}); setShowAnamnesis(true); setEditingAnamnesis(false); }} style={btnSecondary}>Anamnese</button>
                 <button onClick={() => { docInputRef.current?.click(); }} style={btnSecondary}>Anexar Documento</button>
+                {(currentUser.role === "admin" || currentUser.role === "recepcao") && (
+                  <button onClick={() => setShowFinanceiro(true)} style={{...btnSecondary, background:"linear-gradient(135deg,#10B981,#059669)", color:"#fff"}}>💰 Financeiro</button>
+                )}
                 <button onClick={() => setShowNewRecord(true)} style={btnPrimary}>+ Novo Atendimento</button>
                 <input ref={docInputRef} type="file" accept="image/*,.pdf,.docx" multiple onChange={handleDocUpload} style={{ display:"none" }} />
               </div>
@@ -1452,6 +1493,100 @@
           {/* ═══ VIEW PHOTO MODAL ═══ */}
           <Modal isOpen={!!viewingPhoto} onClose={() => setViewingPhoto(null)} title="Visualizar Imagem">
             {viewingPhoto && (<div style={{ textAlign:"center" }}><img src={viewingPhoto} alt="Foto" style={{ maxWidth:"100%", maxHeight:"70vh", borderRadius:12, border:"1px solid #E2E8F0" }} /></div>)}
+          </Modal>
+
+          {/* ═══ FINANCEIRO MODAL ═══ */}
+          <Modal isOpen={showFinanceiro} onClose={() => { setShowFinanceiro(false); setEditingOrcamento(false); setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" }); }} title="Financeiro - Controle de Pagamentos" wide>
+            {selectedPatient && (
+              <div>
+                {/* Orçamento Total */}
+                <div style={{ ...cardStyle, marginBottom:16, background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderColor:"#3B82F6" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                    <div style={{ fontSize:16, fontWeight:700, color:"#1E40AF" }}>💵 Orçamento Total</div>
+                    {!editingOrcamento && (
+                      <button onClick={() => setEditingOrcamento(true)} style={{...btnSecondary, fontSize:12, padding:"4px 12px"}}>✏️ Editar</button>
+                    )}
+                  </div>
+                  {editingOrcamento ? (
+                    <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+                      <Input label="" value={selectedPatient.financeiro.orcamento_total} onChange={e => setPatients(prev => prev.map(p => p.id === selectedPatient.id ? {...p, financeiro: {...p.financeiro, orcamento_total: e.target.value}} : p))} placeholder="0.00" type="number" step="0.01" />
+                      <button onClick={() => saveOrcamento(selectedPatient.id, selectedPatient.financeiro.orcamento_total)} style={{...btnPrimary, fontSize:13, padding:"8px 16px", whiteSpace:"nowrap"}}>✓ Salvar</button>
+                      <button onClick={() => setEditingOrcamento(false)} style={{...btnSecondary, fontSize:13, padding:"8px 16px"}}>×</button>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize:28, fontWeight:800, color:"#1E40AF" }}>
+                      R$ {(selectedPatient.financeiro.orcamento_total || 0).toFixed(2).replace(".", ",")}
+                    </div>
+                  )}
+                </div>
+
+                {/* Resumo Financeiro */}
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:12, marginBottom:16 }}>
+                  <div style={{ ...cardStyle, background:"#F0FDF4", borderColor:"#10B981" }}>
+                    <div style={{ fontSize:12, fontWeight:600, color:"#059669", marginBottom:4 }}>✓ Total Pago</div>
+                    <div style={{ fontSize:22, fontWeight:800, color:"#10B981" }}>
+                      R$ {selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0).toFixed(2).replace(".", ",")}
+                    </div>
+                  </div>
+                  <div style={{ ...cardStyle, background: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "#FEF2F2" : "#F0FDF4", borderColor: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "#EF4444" : "#10B981" }}>
+                    <div style={{ fontSize:12, fontWeight:600, color: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "#DC2626" : "#059669", marginBottom:4 }}>
+                      {selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "⚠️ Saldo Devedor" : "✓ Quitado"}
+                    </div>
+                    <div style={{ fontSize:22, fontWeight:800, color: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "#EF4444" : "#10B981" }}>
+                      R$ {Math.abs(selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0)).toFixed(2).replace(".", ",")}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Novo Pagamento */}
+                <div style={{ ...cardStyle, marginBottom:16 }}>
+                  <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12 }}>💳 Registrar Novo Pagamento</div>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:12, marginBottom:12 }}>
+                    <Input label="Data *" type="date" value={financeiroForm.data} onChange={e => setFinanceiroForm({...financeiroForm, data: e.target.value})} />
+                    <Input label="Valor (R$) *" type="number" step="0.01" value={financeiroForm.valor} onChange={e => setFinanceiroForm({...financeiroForm, valor: e.target.value})} placeholder="0.00" />
+                    <Select label="Forma de Pagamento *" value={financeiroForm.forma_pagamento} onChange={e => setFinanceiroForm({...financeiroForm, forma_pagamento: e.target.value})}
+                      options={[{value:"avista",label:"À Vista"},{value:"parcelado",label:"Parcelado"}]} />
+                  </div>
+                  <Input label="Observação" value={financeiroForm.observacao} onChange={e => setFinanceiroForm({...financeiroForm, observacao: e.target.value})} placeholder="Ex: Parcela 1/12, Cartão, etc." />
+                  <div style={{ display:"flex", justifyContent:"flex-end", marginTop:12 }}>
+                    <button onClick={() => addPagamento(selectedPatient.id)} style={btnPrimary}>✓ Adicionar Pagamento</button>
+                  </div>
+                </div>
+
+                {/* Histórico de Pagamentos */}
+                <div style={{ ...cardStyle }}>
+                  <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12 }}>📊 Histórico de Pagamentos ({selectedPatient.financeiro.pagamentos.length})</div>
+                  {selectedPatient.financeiro.pagamentos.length === 0 ? (
+                    <div style={{ textAlign:"center", padding:40, color:"#94A3B8" }}>Nenhum pagamento registrado</div>
+                  ) : (
+                    <div style={{ maxHeight:400, overflowY:"auto" }}>
+                      {selectedPatient.financeiro.pagamentos.sort((a, b) => new Date(b.data) - new Date(a.data)).map(pg => (
+                        <div key={pg.id} style={{ padding:12, background:"#F8FAFC", borderRadius:8, marginBottom:8, border:"1px solid #E2E8F0" }}>
+                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start", marginBottom:6 }}>
+                            <div style={{ flex:1 }}>
+                              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+                                <span style={{ fontSize:18, fontWeight:800, color:"#10B981" }}>R$ {pg.valor.toFixed(2).replace(".", ",")}</span>
+                                <span style={{ fontSize:11, fontWeight:700, color:pg.forma_pagamento === "avista" ? "#0EA5E9" : "#F59E0B", background:pg.forma_pagamento === "avista" ? "#EFF6FF" : "#FEF3C7", border:`1px solid ${pg.forma_pagamento === "avista" ? "#BFDBFE" : "#FDE68A"}`, borderRadius:6, padding:"2px 8px" }}>
+                                  {pg.forma_pagamento === "avista" ? "À Vista" : "Parcelado"}
+                                </span>
+                              </div>
+                              <div style={{ fontSize:12, color:"#64748B" }}>
+                                📅 {formatDate(pg.data)}
+                                {pg.observacao && ` · ${pg.observacao}`}
+                              </div>
+                              <div style={{ fontSize:11, color:"#94A3B8", marginTop:4 }}>
+                                Registrado por: {pg.registrado_por} em {new Date(pg.registrado_em).toLocaleString("pt-BR")}
+                              </div>
+                            </div>
+                            <button onClick={() => removePagamento(selectedPatient.id, pg.id)} style={{...btnSecondary, fontSize:11, padding:"4px 8px", background:"#FEE2E2", color:"#DC2626", border:"1px solid #FCA5A5"}}>🗑️</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </Modal>
 
           {/* ═══ ARRIVAL CONTROL MODAL ═══ */}
