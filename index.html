@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>O+ Fichas — Prontuário Eletrônico</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!-- Supabase Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
@@ -118,6 +120,26 @@
     const WIRE_MATERIALS = ["Nitinol", "Aço"];
     const WIRE_FORMATS = ["Redondo", "Quadrado"];
     const WIRE_GAUGES = ["012","014","016","018","020","16x16","16x22","17x25","19x25","21x25"];
+
+    // ─── SUPABASE CONFIGURATION ──────────────────────────────────────────
+    const SUPABASE_URL = 'https://bzixxdtbktsztdtpadwh.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6aXh4ZHRia3RzenRkdHBhZHdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDcwNjEsImV4cCI6MjA4NzAyMzA2MX0.DqgAyHB_QPzkz21RFXYf-fN1IzxyxoX4mMzqr3KMIww';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Role mapping: LocalStorage → Supabase ENUM
+    const ROLE_TO_ENUM = {
+      'admin': 'ADMIN',
+      'dentista': 'PROFESSIONAL',
+      'orto': 'PROFESSIONAL',
+      'recepcao': 'RECEPTION'
+    };
+    const ENUM_TO_ROLE = {
+      'ADMIN': 'admin',
+      'OWNER': 'admin',
+      'PROFESSIONAL': 'dentista',
+      'RECEPTION': 'recepcao',
+      'MANAGER': 'admin'
+    };
 
     // ─── UTILITIES ───────────────────────────────────────────────────────
     const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
@@ -450,6 +472,36 @@
       const photoInputRef = useRef(null);
       const docInputRef = useRef(null);
 
+      // ── Supabase Session Restore ──
+      useEffect(() => {
+        const restoreSession = async () => {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            // Buscar perfil do usuário
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('user_id', session.user.id)
+              .single();
+            
+            if (profile && profile.active) {
+              const localUser = {
+                id: profile.user_id,
+                name: profile.full_name || session.user.email,
+                login: session.user.email,
+                role: ENUM_TO_ROLE[profile.role] || 'recepcao',
+                specialty: profile.specialty || '',
+                active: profile.active,
+                clinic_id: profile.clinic_id,
+                createdAt: profile.created_at
+              };
+              setCurrentUser(localUser);
+            }
+          }
+        };
+        restoreSession();
+      }, []);
+
       // ── Persist (with error handling to prevent UI freeze) ──
       const safeSave = (key, data) => { try { localStorage.setItem(key, JSON.stringify(data)); } catch(e) { console.warn("localStorage save failed for", key, e.message); } };
       useEffect(() => { safeSave("dental_users", users); }, [users]);
@@ -467,15 +519,67 @@
       };
 
       // ── Auth ──
-      const handleLogin = () => {
-        const u = users.find(x => x.login === loginForm.login && x.password === loginForm.password && x.active);
-        if (!u) { setLoginError("Login ou senha inválidos."); return; }
-        setCurrentUser(u);
+      const handleLogin = async () => {
         setLoginError("");
-        setLoginForm({ login:"", password:"" });
-        setTimeout(() => addAudit("LOGIN","usuario",u.id,u.name,"Login realizado"), 0);
+        try {
+          // Autenticar com Supabase Auth
+          const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+            email: loginForm.login,
+            password: loginForm.password
+          });
+          
+          if (authError) {
+            setLoginError("Email ou senha inválidos.");
+            return;
+          }
+
+          // Buscar perfil do usuário no Supabase
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('user_id', authData.user.id)
+            .single();
+
+          if (profileError || !profile) {
+            setLoginError("Perfil de usuário não encontrado.");
+            await supabase.auth.signOut();
+            return;
+          }
+
+          // Converter perfil Supabase para formato LocalStorage
+          const localUser = {
+            id: profile.user_id,
+            name: profile.full_name || authData.user.email,
+            login: authData.user.email,
+            role: ENUM_TO_ROLE[profile.role] || 'recepcao',
+            specialty: profile.specialty || '',
+            active: profile.active,
+            clinic_id: profile.clinic_id,
+            createdAt: profile.created_at
+          };
+
+          if (!localUser.active) {
+            setLoginError("Usuário inativo. Contate o administrador.");
+            await supabase.auth.signOut();
+            return;
+          }
+
+          setCurrentUser(localUser);
+          setLoginError("");
+          setLoginForm({ login:"", password:"" });
+          setTimeout(() => addAudit("LOGIN","usuario",localUser.id,localUser.name,"Login realizado"), 0);
+        } catch (err) {
+          console.error('Erro no login:', err);
+          setLoginError("Erro ao fazer login. Tente novamente.");
+        }
       };
-      const handleLogout = () => { setCurrentUser(null); setView("list"); setSelectedPatient(null); };
+      
+      const handleLogout = async () => {
+        await supabase.auth.signOut();
+        setCurrentUser(null);
+        setView("list");
+        setSelectedPatient(null);
+      };
 
       // ── Patient CRUD ──
       const createPatient = () => {
@@ -850,10 +954,10 @@
                 <p style={{ fontSize:13, color:"#64748B", marginTop:4 }}>Prontuário Eletrônico Odontológico</p>
               </div>
               {loginError && <div style={{ background:"#FEF2F2", border:"1px solid #FECACA", borderRadius:10, padding:"10px 14px", fontSize:13, color:"#DC2626", marginBottom:14, fontWeight:600 }}>{loginError}</div>}
-              <Input label="Login" value={loginForm.login} onChange={e => setLoginForm({...loginForm, login:e.target.value})} placeholder="Seu login" onKeyDown={e => e.key==="Enter" && handleLogin()} />
+              <Input label="Email" value={loginForm.login} onChange={e => setLoginForm({...loginForm, login:e.target.value})} placeholder="seu@email.com" onKeyDown={e => e.key==="Enter" && handleLogin()} />
               <Input label="Senha" type="password" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password:e.target.value})} placeholder="Sua senha" onKeyDown={e => e.key==="Enter" && handleLogin()} />
               <button onClick={handleLogin} style={{ ...btnPrimary, width:"100%", justifyContent:"center", padding:"12px 20px", fontSize:15, marginTop:8 }}>Entrar</button>
-              <div style={{ textAlign:"center", marginTop:16, fontSize:11, color:"#94A3B8" }}>Primeiro acesso: admin / admin123</div>
+              <div style={{ textAlign:"center", marginTop:16, fontSize:11, color:"#94A3B8" }}>Use suas credenciais do Supabase</div>
             </div>
           </div>
         );
