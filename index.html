@@ -740,6 +740,158 @@
         setSelectedPatient(null);
       };
 
+      // ── Supabase Storage Functions ──
+      
+      // Converter base64 para Blob
+      const base64ToBlob = (base64, mimeType = 'image/png') => {
+        const byteString = atob(base64.split(',')[1]);
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        return new Blob([ab], { type: mimeType });
+      };
+      
+      // Upload de assinatura para Storage
+      const uploadSignatureToStorage = async (appointmentId, patientId, signatureBase64) => {
+        try {
+          if (!signatureBase64 || !signatureBase64.startsWith('data:image')) {
+            return null;
+          }
+          
+          const blob = base64ToBlob(signatureBase64, 'image/png');
+          const fileName = `${appointmentId}.png`;
+          const filePath = `${currentUser.clinic_id}/${patientId}/${fileName}`;
+          
+          const { data, error } = await supabase.storage
+            .from('appointment-signatures')
+            .upload(filePath, blob, {
+              contentType: 'image/png',
+              upsert: true
+            });
+          
+          if (error) throw error;
+          
+          // Obter URL pública
+          const { data: { publicUrl } } = supabase.storage
+            .from('appointment-signatures')
+            .getPublicUrl(filePath);
+          
+          return publicUrl;
+        } catch (err) {
+          console.error('Erro ao fazer upload de assinatura:', err);
+          return null;
+        }
+      };
+      
+      // Upload de foto para Storage
+      const uploadPhotoToStorage = async (appointmentId, patientId, file, photoId) => {
+        try {
+          const ext = file.name.split('.').pop();
+          const fileName = `${photoId}.${ext}`;
+          const filePath = `${currentUser.clinic_id}/${patientId}/${appointmentId}/${fileName}`;
+          
+          const { data, error } = await supabase.storage
+            .from('appointment-photos')
+            .upload(filePath, file, {
+              contentType: file.type,
+              upsert: true
+            });
+          
+          if (error) throw error;
+          
+          // Obter URL pública
+          const { data: { publicUrl } } = supabase.storage
+            .from('appointment-photos')
+            .getPublicUrl(filePath);
+          
+          return {
+            id: photoId,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            url: publicUrl,
+            storage_path: filePath
+          };
+        } catch (err) {
+          console.error('Erro ao fazer upload de foto:', err);
+          return null;
+        }
+      };
+      
+      // Upload de documento para Storage
+      const uploadDocumentToStorage = async (patientId, file) => {
+        try {
+          const docId = `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const ext = file.name.split('.').pop();
+          const fileName = `${docId}.${ext}`;
+          const filePath = `${currentUser.clinic_id}/${patientId}/${fileName}`;
+          
+          const { data, error } = await supabase.storage
+            .from('patient-documents')
+            .upload(filePath, file, {
+              contentType: file.type,
+              upsert: false
+            });
+          
+          if (error) throw error;
+          
+          // Obter URL pública
+          const { data: { publicUrl } } = supabase.storage
+            .from('patient-documents')
+            .getPublicUrl(filePath);
+          
+          // Inserir registro na tabela patient_documents
+          const { data: docData, error: docError } = await supabase
+            .from('patient_documents')
+            .insert({
+              patient_id: patientId,
+              clinic_id: currentUser.clinic_id,
+              file_name: file.name,
+              file_type: file.type,
+              file_size: file.size,
+              storage_path: filePath,
+              storage_url: publicUrl,
+              uploaded_by: currentUser.id
+            })
+            .select()
+            .single();
+          
+          if (docError) throw docError;
+          
+          return {
+            id: docData.id,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            url: publicUrl,
+            storage_path: filePath,
+            uploadedBy: currentUser.id,
+            uploadedByName: currentUser.name,
+            uploadedAt: docData.uploaded_at
+          };
+        } catch (err) {
+          console.error('Erro ao fazer upload de documento:', err);
+          throw err;
+        }
+      };
+      
+      // Deletar arquivo do Storage
+      const deleteFromStorage = async (bucket, path) => {
+        try {
+          const { error } = await supabase.storage
+            .from(bucket)
+            .remove([path]);
+          
+          if (error) throw error;
+          return true;
+        } catch (err) {
+          console.error('Erro ao deletar arquivo do Storage:', err);
+          return false;
+        }
+      };
+
       // ── Appointments CRUD (Supabase) ──
       const createAppointmentSupabase = async (patientId, appointmentData) => {
         const { data, error } = await supabase
@@ -765,12 +917,42 @@
         
         if (error) throw error;
         
-        // Salvar signature e photos no LocalStorage (temporário - migrar na Fase 4)
+        // Upload de assinatura para Storage
+        let signatureUrl = null;
         if (appointmentData.signature) {
-          saveLocalData('appointment_signature', data.id, appointmentData.signature);
+          signatureUrl = await uploadSignatureToStorage(data.id, patientId, appointmentData.signature);
         }
+        
+        // Upload de fotos para Storage
+        let photosWithUrls = [];
         if (appointmentData.photos && appointmentData.photos.length > 0) {
-          saveLocalData('appointment_photos', data.id, appointmentData.photos);
+          for (const photo of appointmentData.photos) {
+            // Se a foto tem blob no IndexedDB, fazer upload
+            if (photo.id && fileCache[photo.id]) {
+              const blob = await fetch(fileCache[photo.id]).then(r => r.blob());
+              const file = new File([blob], photo.name, { type: photo.type });
+              const photoData = await uploadPhotoToStorage(data.id, patientId, file, photo.id);
+              if (photoData) {
+                photosWithUrls.push(photoData);
+              }
+            } else {
+              // Manter metadata se não conseguir fazer upload
+              photosWithUrls.push(photo);
+            }
+          }
+        }
+        
+        // Atualizar appointment com URLs
+        if (signatureUrl || photosWithUrls.length > 0) {
+          const { error: updateError } = await supabase
+            .from('appointments')
+            .update({
+              signature_url: signatureUrl,
+              photos: photosWithUrls.length > 0 ? photosWithUrls : null
+            })
+            .eq('id', data.id);
+          
+          if (updateError) console.error('Erro ao atualizar URLs:', updateError);
         }
         
         return {
@@ -779,7 +961,8 @@
           nextAppointment: data.next_appointment,
           wireInfo: data.wire_info,
           signature: appointmentData.signature || "",
-          photos: appointmentData.photos || [],
+          signatureUrl: signatureUrl,
+          photos: photosWithUrls,
           createdAt: data.created_at
         };
       };
@@ -793,14 +976,15 @@
         
         if (error) throw error;
         
-        // Combinar com dados locais (signature e photos)
+        // Carregar assinaturas e fotos do Storage
         return data.map(a => ({
           ...a,
           date: a.appointment_date,
           nextAppointment: a.next_appointment,
           wireInfo: a.wire_info,
-          signature: getLocalData('appointment_signature', a.id) || "",
-          photos: getLocalData('appointment_photos', a.id) || [],
+          signature: "", // Não precisa mais do base64
+          signatureUrl: a.signature_url,
+          photos: a.photos || [],
           createdAt: a.created_at
         }));
       };
@@ -1300,24 +1484,29 @@
       };
 
       // ── Patient Documents ──
-      const handleDocUpload = (e) => {
-        Array.from(e.target.files).forEach(file => {
-          if (file.size > MAX_FILE_SIZE) { alert(`Arquivo ${file.name} excede 50MB.`); return; }
-          if (!ALLOWED_FILE_TYPES.some(t => file.type === t || file.type.startsWith("image/"))) { alert(`Tipo não permitido: ${file.type}`); return; }
-          const fid = generateId();
-          const reader = new FileReader();
-          reader.onload = async (ev) => {
-            const dataUrl = ev.target.result;
-            try { await FileDB.put(fid, dataUrl); } catch(err) { alert("Erro ao salvar arquivo: " + err.message); return; }
-            setFileCache(prev => ({...prev, [fid]: dataUrl}));
-            const doc = { id:fid, name:file.name, type:file.type, size:file.size, uploadedBy:currentUser.id, uploadedByName:currentUser.name, uploadedAt:new Date().toISOString() };
+      const handleDocUpload = async (e) => {
+        for (const file of Array.from(e.target.files)) {
+          if (file.size > MAX_FILE_SIZE) { alert(`Arquivo ${file.name} excede 50MB.`); continue; }
+          if (!ALLOWED_FILE_TYPES.some(t => file.type === t || file.type.startsWith("image/"))) { alert(`Tipo não permitido: ${file.type}`); continue; }
+          
+          try {
+            // Upload para Supabase Storage
+            const doc = await uploadDocumentToStorage(selectedPatient.id, file);
+            
+            // Atualizar estado local
             const updated = { ...selectedPatient, documents:[doc, ...selectedPatient.documents] };
             setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
             setSelectedPatient(updated);
+            
+            // Salvar metadata no LocalStorage (para compatibilidade)
+            saveLocalData('documents', selectedPatient.id, updated.documents);
+            
             addAudit("UPLOAD_DOCUMENTO","paciente",selectedPatient.id,selectedPatient.name, `Arquivo: ${file.name} (${formatSize(file.size)})`);
-          };
-          reader.readAsDataURL(file);
-        });
+          } catch (err) {
+            console.error('Erro ao fazer upload de documento:', err);
+            alert(`Erro ao fazer upload de ${file.name}. Tente novamente.`);
+          }
+        }
         if (docInputRef.current) docInputRef.current.value = "";
       };
 
@@ -1659,19 +1848,23 @@
                           <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
                             {rec.photos.map(ph => (
                               <div key={ph.id} style={{ width:56, height:56, borderRadius:8, overflow:"hidden", border:"1px solid #E2E8F0", cursor:"pointer" }}>
-                                <FileThumb fileId={ph.id} cache={fileCache} loadFn={loadFile} type={ph.type || "image/jpeg"} name={ph.name}
-                                  onClick={async () => { const d = fileCache[ph.id] || await FileDB.get(ph.id); if (d) setViewingPhoto(d); }}
-                                  style={{ borderRadius:8 }} />
+                                {ph.url ? (
+                                  <img src={ph.url} alt={ph.name} onClick={() => setViewingPhoto(ph.url)} style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:8 }} />
+                                ) : (
+                                  <FileThumb fileId={ph.id} cache={fileCache} loadFn={loadFile} type={ph.type || "image/jpeg"} name={ph.name}
+                                    onClick={async () => { const d = fileCache[ph.id] || await FileDB.get(ph.id); if (d) setViewingPhoto(d); }}
+                                    style={{ borderRadius:8 }} />
+                                )}
                               </div>
                             ))}
                           </div>
                         </div>
                       )}
                       {rec.nextAppointment && <div style={{ fontSize:12, color:"#0EA5E9", marginTop:8, fontWeight:600 }}>Próxima consulta: {formatDate(rec.nextAppointment+"T12:00:00")}</div>}
-                      {rec.signature ? (
+                      {(rec.signatureUrl || rec.signature) ? (
                         <div style={{ marginTop:10, paddingTop:10, borderTop:"1px dashed #E2E8F0", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                           <span style={{ fontSize:12, color:"#10B981", fontWeight:600 }}>Assinado</span>
-                          <button onClick={() => setViewingSignature(rec.signature)} style={{ background:"#F0FDF4", border:"1px solid #BBF7D0", borderRadius:6, padding:"4px 10px", fontSize:11, color:"#16A34A", cursor:"pointer", fontWeight:600 }}>Ver assinatura</button>
+                          <button onClick={() => setViewingSignature(rec.signatureUrl || rec.signature)} style={{ background:"#F0FDF4", border:"1px solid #BBF7D0", borderRadius:6, padding:"4px 10px", fontSize:11, color:"#16A34A", cursor:"pointer", fontWeight:600 }}>Ver assinatura</button>
                         </div>
                       ) : (
                         <div style={{ marginTop:8, fontSize:11, color:"#F59E0B", fontWeight:600 }}>Sem assinatura</div>
