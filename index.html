@@ -740,6 +740,115 @@
         setSelectedPatient(null);
       };
 
+      // ── Appointments CRUD (Supabase) ──
+      const createAppointmentSupabase = async (patientId, appointmentData) => {
+        const { data, error } = await supabase
+          .from('appointments')
+          .insert({
+            patient_id: patientId,
+            clinic_id: currentUser.clinic_id,
+            appointment_date: appointmentData.date,
+            tipo_atendimento: appointmentData.tipo_atendimento,
+            specialty: appointmentData.specialty,
+            procedures: appointmentData.procedures,
+            teeth: appointmentData.teeth || [],
+            notes: appointmentData.notes || null,
+            next_appointment: appointmentData.nextAppointment || null,
+            wire_info: appointmentData.wireInfo || null,
+            dentista_atendente_id: appointmentData.dentista_atendente_id,
+            dentista_responsavel_no_momento_id: appointmentData.dentista_responsavel_no_momento_id || null,
+            atendimento_fora_da_responsabilidade: appointmentData.atendimento_fora_da_responsabilidade || false,
+            motivo_fora: appointmentData.motivo_fora || null
+          })
+          .select()
+          .single();
+        
+        if (error) throw error;
+        
+        // Salvar signature e photos no LocalStorage (temporário - migrar na Fase 4)
+        if (appointmentData.signature) {
+          saveLocalData('appointment_signature', data.id, appointmentData.signature);
+        }
+        if (appointmentData.photos && appointmentData.photos.length > 0) {
+          saveLocalData('appointment_photos', data.id, appointmentData.photos);
+        }
+        
+        return {
+          ...data,
+          date: data.appointment_date,
+          nextAppointment: data.next_appointment,
+          wireInfo: data.wire_info,
+          signature: appointmentData.signature || "",
+          photos: appointmentData.photos || [],
+          createdAt: data.created_at
+        };
+      };
+      
+      const loadAppointmentsSupabase = async (patientId) => {
+        const { data, error } = await supabase
+          .from('appointments')
+          .select('*')
+          .eq('patient_id', patientId)
+          .order('appointment_date', { ascending: false });
+        
+        if (error) throw error;
+        
+        // Combinar com dados locais (signature e photos)
+        return data.map(a => ({
+          ...a,
+          date: a.appointment_date,
+          nextAppointment: a.next_appointment,
+          wireInfo: a.wire_info,
+          signature: getLocalData('appointment_signature', a.id) || "",
+          photos: getLocalData('appointment_photos', a.id) || [],
+          createdAt: a.created_at
+        }));
+      };
+      
+      const deleteAppointmentSupabase = async (id) => {
+        const { error } = await supabase
+          .from('appointments')
+          .delete()
+          .eq('id', id);
+        
+        if (error) throw error;
+        
+        // Limpar dados locais
+        localStorage.removeItem(`appointment_signature_${id}`);
+        localStorage.removeItem(`appointment_photos_${id}`);
+      };
+      
+      // ── Migração de Records Antigos ──
+      const migrateRecordsToSupabase = async (patientId) => {
+        try {
+          const oldRecords = getLocalData('records', patientId) || [];
+          if (oldRecords.length === 0) return { migrated: 0, errors: 0, total: 0 };
+          
+          let migrated = 0;
+          let errors = 0;
+          
+          for (const oldRecord of oldRecords) {
+            try {
+              await createAppointmentSupabase(patientId, oldRecord);
+              migrated++;
+            } catch (err) {
+              console.error(`Erro ao migrar atendimento:`, err);
+              errors++;
+            }
+          }
+          
+          // Limpar dados antigos após migração bem-sucedida
+          if (migrated > 0 && errors === 0) {
+            localStorage.removeItem(`patient_records_${patientId}`);
+          }
+          
+          return { migrated, errors, total: oldRecords.length };
+        } catch (err) {
+          console.error('Erro na migração de atendimentos:', err);
+          return { migrated: 0, errors: 0, total: 0 };
+        }
+      };
+
       // ── Patient CRUD ──
       const createPatient = async () => {
         if (!npForm.name.trim() || (!npForm.responsavel_clinico_id && !npForm.responsavel_orto_id)) return;
@@ -823,10 +932,52 @@
         }
       };
 
-      const openPatient = (p) => {
-        const fresh = patients.find(x => x.id === p.id) || p;
-        setSelectedPatient(fresh); setView("patient"); setPatientTab("orto");
-        addAudit("VISUALIZAR_PRONTUARIO","paciente",fresh.id,fresh.name,"");
+      const openPatient = async (p) => {
+        try {
+          const fresh = patients.find(x => x.id === p.id) || p;
+          
+          // Verificar se há records antigos para migrar
+          const oldRecords = getLocalData('records', fresh.id) || [];
+          if (oldRecords.length > 0) {
+            const shouldMigrate = confirm(
+              `Encontramos ${oldRecords.length} atendimento(s) antigo(s) deste paciente.\n\n` +
+              `Deseja migrá-los para o novo sistema Supabase?\n\n` +
+              `(Recomendado: clique em OK para migrar)`
+            );
+            
+            if (shouldMigrate) {
+              const result = await migrateRecordsToSupabase(fresh.id);
+              if (result.migrated > 0) {
+                alert(
+                  `Migração de atendimentos concluída!\n\n` +
+                  `✅ ${result.migrated} atendimento(s) migrado(s) com sucesso\n` +
+                  (result.errors > 0 ? `⚠️ ${result.errors} erro(s)` : '')
+                );
+              }
+            }
+          }
+          
+          // Carregar atendimentos do Supabase
+          const appointments = await loadAppointmentsSupabase(fresh.id);
+          
+          const patientWithRecords = {
+            ...fresh,
+            records: appointments
+          };
+          
+          setSelectedPatient(patientWithRecords);
+          setView("patient");
+          setPatientTab("orto");
+          addAudit("VISUALIZAR_PRONTUARIO","paciente",fresh.id,fresh.name,"");
+        } catch (err) {
+          console.error('Erro ao carregar atendimentos:', err);
+          // Fallback para dados locais
+          const fresh = patients.find(x => x.id === p.id) || p;
+          const localRecords = getLocalData('records', fresh.id) || [];
+          setSelectedPatient({...fresh, records: localRecords});
+          setView("patient");
+          setPatientTab("orto");
+        }
       };
 
       // ── Anamnesis ──
@@ -983,27 +1134,50 @@
         setRespCheckMotivo("");
       };
 
-      const saveRecord = (rec) => {
-        // Limpa o controle de chegada ao registrar atendimento (finaliza o atendimento)
-        const updated = { 
-          ...selectedPatient, 
-          records: [rec, ...selectedPatient.records],
-          arrivalControl: null // Remove da fila ao finalizar atendimento
-        };
-        setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
-        setSelectedPatient(updated);
-        setNrForm({...emptyNrForm});
-        setShowNewRecord(false);
-        addAudit("CRIAR_ATENDIMENTO","atendimento",rec.id,selectedPatient.name,
-          `Tipo: ${rec.tipo_atendimento}, Especialidade: ${SPECIALTIES[rec.specialty]?.label}, Fora da resp: ${rec.atendimento_fora_da_responsabilidade?"SIM":"NÃO"}${rec.motivo_fora?", Motivo: "+rec.motivo_fora:""}`);
-        addAudit("FINALIZAR_ATENDIMENTO","paciente",selectedPatient.id,selectedPatient.name,"Atendimento finalizado e paciente removido da fila");
+      const saveRecord = async (rec) => {
+        try {
+          // Criar atendimento no Supabase
+          const newAppointment = await createAppointmentSupabase(selectedPatient.id, rec);
+          
+          // Atualizar estado local
+          const updated = { 
+            ...selectedPatient, 
+            records: [newAppointment, ...selectedPatient.records],
+            arrivalControl: null // Remove da fila ao finalizar atendimento
+          };
+          
+          setPatients(prev => prev.map(p => p.id === selectedPatient.id ? updated : p));
+          setSelectedPatient(updated);
+          setNrForm({...emptyNrForm});
+          setShowNewRecord(false);
+          
+          addAudit("CRIAR_ATENDIMENTO","atendimento",newAppointment.id,selectedPatient.name,
+            `Tipo: ${rec.tipo_atendimento}, Especialidade: ${SPECIALTIES[rec.specialty]?.label}, Fora da resp: ${rec.atendimento_fora_da_responsabilidade?"SIM":"NÃO"}${rec.motivo_fora?", Motivo: "+rec.motivo_fora:""}`);
+          addAudit("FINALIZAR_ATENDIMENTO","paciente",selectedPatient.id,selectedPatient.name,"Atendimento finalizado e paciente removido da fila");
+        } catch (err) {
+          console.error('Erro ao salvar atendimento:', err);
+          alert('Erro ao salvar atendimento. Verifique os dados e tente novamente.');
+        }
       };
 
-      const deleteRecord = (recId) => {
-        const updated = { ...selectedPatient, records: selectedPatient.records.filter(r => r.id !== recId) };
-        setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
-        setSelectedPatient(updated);
-        addAudit("EXCLUIR_ATENDIMENTO","atendimento",recId,selectedPatient.name,"");
+      const deleteRecord = async (recId) => {
+        if (!confirm("Deseja realmente excluir este atendimento? Esta ação não pode ser desfeita.")) return;
+        
+        try {
+          await deleteAppointmentSupabase(recId);
+          
+          const updated = { 
+            ...selectedPatient, 
+            records: selectedPatient.records.filter(r => r.id !== recId) 
+          };
+          
+          setPatients(prev => prev.map(p => p.id === selectedPatient.id ? updated : p));
+          setSelectedPatient(updated);
+          addAudit("EXCLUIR_ATENDIMENTO","atendimento",recId,selectedPatient.name,"");
+        } catch (err) {
+          console.error('Erro ao excluir atendimento:', err);
+          alert('Erro ao excluir atendimento. Tente novamente.');
+        }
       };
 
       // ── Relatório ──
