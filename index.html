@@ -753,6 +753,117 @@
         return new Blob([ab], { type: mimeType });
       };
       
+      // ── CRUD Financeiro: Orçamentos ──
+      const createOrUpdateBudgetSupabase = async (patientId, totalAmount) => {
+        try {
+          const { data, error } = await supabase
+            .from('patient_budgets')
+            .upsert({
+              patient_id: patientId,
+              clinic_id: currentUser.clinic_id,
+              total_amount: parseFloat(totalAmount) || 0,
+              created_by: currentUser.id,
+              updated_by: currentUser.id
+            }, {
+              onConflict: 'patient_id'
+            })
+            .select()
+            .single();
+          
+          if (error) throw error;
+          return data;
+        } catch (err) {
+          console.error('Erro ao salvar orçamento:', err);
+          return null;
+        }
+      };
+      
+      const loadBudgetSupabase = async (patientId) => {
+        try {
+          const { data, error } = await supabase
+            .from('patient_budgets')
+            .select('*')
+            .eq('patient_id', patientId)
+            .single();
+          
+          if (error && error.code !== 'PGRST116') throw error; // PGRST116 = not found
+          return data || { total_amount: 0 };
+        } catch (err) {
+          console.error('Erro ao carregar orçamento:', err);
+          return { total_amount: 0 };
+        }
+      };
+      
+      // ── CRUD Financeiro: Pagamentos ──
+      const createPaymentSupabase = async (patientId, paymentData) => {
+        try {
+          const { data, error } = await supabase
+            .from('payments')
+            .insert({
+              patient_id: patientId,
+              clinic_id: currentUser.clinic_id,
+              payment_date: paymentData.data,
+              amount: parseFloat(paymentData.valor),
+              payment_method: paymentData.forma_pagamento,
+              notes: paymentData.observacao || null,
+              registered_by: currentUser.id,
+              registered_at: new Date().toISOString()
+            })
+            .select()
+            .single();
+          
+          if (error) throw error;
+          return data;
+        } catch (err) {
+          console.error('Erro ao criar pagamento:', err);
+          return null;
+        }
+      };
+      
+      const loadPaymentsSupabase = async (patientId) => {
+        try {
+          const { data, error } = await supabase
+            .from('payments')
+            .select(`
+              *,
+              registered_by_profile:profiles!registered_by(full_name)
+            `)
+            .eq('patient_id', patientId)
+            .order('payment_date', { ascending: false });
+          
+          if (error) throw error;
+          
+          // Transformar para formato do LocalStorage
+          return (data || []).map(p => ({
+            id: p.id,
+            data: p.payment_date,
+            valor: parseFloat(p.amount),
+            forma_pagamento: p.payment_method,
+            observacao: p.notes || '',
+            registrado_por: p.registered_by_profile?.full_name || 'Usuário',
+            registrado_em: p.registered_at
+          }));
+        } catch (err) {
+          console.error('Erro ao carregar pagamentos:', err);
+          return [];
+        }
+      };
+      
+      const deletePaymentSupabase = async (paymentId) => {
+        try {
+          const { error } = await supabase
+            .from('payments')
+            .delete()
+            .eq('id', paymentId);
+          
+          if (error) throw error;
+          return true;
+        } catch (err) {
+          console.error('Erro ao deletar pagamento:', err);
+          return false;
+        }
+      };
+      
       // Upload de assinatura para Storage
       const uploadSignatureToStorage = async (appointmentId, patientId, signatureBase64) => {
         try {
@@ -1144,9 +1255,70 @@
           // Carregar atendimentos do Supabase
           const appointments = await loadAppointmentsSupabase(fresh.id);
           
+          // Carregar dados financeiros do Supabase
+          const budget = await loadBudgetSupabase(fresh.id);
+          const payments = await loadPaymentsSupabase(fresh.id);
+          
+          // Verificar se há dados financeiros antigos para migrar
+          const oldFinanceiro = getLocalData('financeiro', fresh.id);
+          if (oldFinanceiro && (oldFinanceiro.orcamento_total > 0 || oldFinanceiro.pagamentos?.length > 0)) {
+            const shouldMigrate = confirm(
+              `Encontramos dados financeiros antigos deste paciente.\n\n` +
+              `Orçamento: R$ ${oldFinanceiro.orcamento_total.toFixed(2)}\n` +
+              `Pagamentos: ${oldFinanceiro.pagamentos?.length || 0}\n\n` +
+              `Deseja migrá-los para o novo sistema Supabase?\n\n` +
+              `(Recomendado: clique em OK para migrar)`
+            );
+            
+            if (shouldMigrate) {
+              let migrated = 0;
+              let errors = 0;
+              
+              // Migrar orçamento
+              if (oldFinanceiro.orcamento_total > 0) {
+                const budgetResult = await createOrUpdateBudgetSupabase(fresh.id, oldFinanceiro.orcamento_total);
+                if (budgetResult) migrated++;
+                else errors++;
+              }
+              
+              // Migrar pagamentos
+              for (const pagamento of (oldFinanceiro.pagamentos || [])) {
+                const paymentResult = await createPaymentSupabase(fresh.id, {
+                  data: pagamento.data,
+                  valor: pagamento.valor,
+                  forma_pagamento: pagamento.forma_pagamento,
+                  observacao: pagamento.observacao
+                });
+                if (paymentResult) migrated++;
+                else errors++;
+              }
+              
+              if (migrated > 0) {
+                alert(
+                  `Migração financeira concluída!\n\n` +
+                  `✅ ${migrated} item(ns) migrado(s) com sucesso\n` +
+                  (errors > 0 ? `⚠️ ${errors} erro(s)` : '')
+                );
+                
+                // Recarregar dados após migração
+                const newBudget = await loadBudgetSupabase(fresh.id);
+                const newPayments = await loadPaymentsSupabase(fresh.id);
+                budget.total_amount = newBudget?.total_amount || 0;
+                payments.splice(0, payments.length, ...newPayments);
+                
+                // Limpar dados antigos
+                localStorage.removeItem(`patient_financeiro_${fresh.id}`);
+              }
+            }
+          }
+          
           const patientWithRecords = {
             ...fresh,
-            records: appointments
+            records: appointments,
+            financeiro: {
+              orcamento_total: budget?.total_amount || 0,
+              pagamentos: payments
+            }
           };
           
           setSelectedPatient(patientWithRecords);
@@ -1257,33 +1429,74 @@
       };
 
       // ── Financeiro ──
-      const saveOrcamento = (patientId, valor) => {
-        setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, orcamento_total: parseFloat(valor) || 0}} : p));
-        addAudit("ATUALIZAR_ORCAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Or\u00e7amento: R$ ${parseFloat(valor).toFixed(2)}`);
-        setEditingOrcamento(false);
-        setTempOrcamento("");
+      const saveOrcamento = async (patientId, valor) => {
+        try {
+          // Salvar no Supabase
+          await createOrUpdateBudgetSupabase(patientId, valor);
+          
+          // Atualizar estado local
+          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, orcamento_total: parseFloat(valor) || 0}} : p));
+          addAudit("ATUALIZAR_ORCAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Orçamento: R$ ${parseFloat(valor).toFixed(2)}`);
+          setEditingOrcamento(false);
+          setTempOrcamento("");
+        } catch (err) {
+          console.error('Erro ao salvar orçamento:', err);
+          alert('Erro ao salvar orçamento. Tente novamente.');
+        }
       };
 
-      const addPagamento = (patientId) => {
+      const addPagamento = async (patientId) => {
         if (!financeiroForm.valor || parseFloat(financeiroForm.valor) <= 0) return;
-        const novoPagamento = {
-          id: generateId(),
-          data: financeiroForm.data,
-          valor: parseFloat(financeiroForm.valor),
-          forma_pagamento: financeiroForm.forma_pagamento,
-          observacao: financeiroForm.observacao,
-          registrado_por: currentUser.name,
-          registrado_em: new Date().toISOString()
-        };
-        setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: [...p.financeiro.pagamentos, novoPagamento]}} : p));
-        addAudit("ADICIONAR_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Valor: R$ ${novoPagamento.valor.toFixed(2)} - ${novoPagamento.forma_pagamento === "avista" ? "\u00c0 vista" : "Parcelado"}`);
-        setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
+        
+        try {
+          // Criar no Supabase
+          const data = await createPaymentSupabase(patientId, financeiroForm);
+          
+          if (!data) {
+            alert('Erro ao adicionar pagamento. Tente novamente.');
+            return;
+          }
+          
+          // Transformar para formato local
+          const novoPagamento = {
+            id: data.id,
+            data: data.payment_date,
+            valor: parseFloat(data.amount),
+            forma_pagamento: data.payment_method,
+            observacao: data.notes || '',
+            registrado_por: currentUser.name,
+            registrado_em: data.registered_at
+          };
+          
+          // Atualizar estado local
+          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: [...p.financeiro.pagamentos, novoPagamento]}} : p));
+          addAudit("ADICIONAR_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Valor: R$ ${novoPagamento.valor.toFixed(2)} - ${novoPagamento.forma_pagamento === "avista" ? "À vista" : "Parcelado"}`);
+          setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
+        } catch (err) {
+          console.error('Erro ao adicionar pagamento:', err);
+          alert('Erro ao adicionar pagamento. Tente novamente.');
+        }
       };
 
-      const removePagamento = (patientId, pagamentoId) => {
+      const removePagamento = async (patientId, pagamentoId) => {
         if (!confirm("Deseja realmente remover este pagamento?")) return;
-        setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: p.financeiro.pagamentos.filter(pg => pg.id !== pagamentoId)}} : p));
-        addAudit("REMOVER_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"","");
+        
+        try {
+          // Deletar do Supabase
+          const success = await deletePaymentSupabase(pagamentoId);
+          
+          if (!success) {
+            alert('Erro ao remover pagamento. Tente novamente.');
+            return;
+          }
+          
+          // Atualizar estado local
+          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: p.financeiro.pagamentos.filter(pg => pg.id !== pagamentoId)}} : p));
+          addAudit("REMOVER_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"","");
+        } catch (err) {
+          console.error('Erro ao remover pagamento:', err);
+          alert('Erro ao remover pagamento. Tente novamente.');
+        }
       };
 
       // ── Records ──
