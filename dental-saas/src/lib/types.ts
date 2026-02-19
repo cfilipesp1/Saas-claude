@@ -44,6 +44,32 @@ export interface Patient {
   created_at: string;
 }
 
+export interface Anamnesis {
+  id: string;
+  clinic_id: string;
+  patient_id: string;
+  has_allergy: boolean;
+  allergy_details: string;
+  has_heart_disease: boolean;
+  heart_details: string;
+  has_diabetes: boolean;
+  diabetes_details: string;
+  has_hypertension: boolean;
+  hypertension_details: string;
+  has_bleeding_disorder: boolean;
+  bleeding_details: string;
+  uses_medication: boolean;
+  medication_details: string;
+  is_pregnant: boolean;
+  is_smoker: boolean;
+  other_conditions: string;
+  has_alert: boolean;
+  alert_message: string;
+  updated_by: string | null;
+  updated_at: string;
+  created_at: string;
+}
+
 export interface WaitlistEntry {
   id: string;
   clinic_id: string;

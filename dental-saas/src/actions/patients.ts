@@ -3,6 +3,17 @@
 import { createServerSupabase } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
+export async function getPatient(id: string) {
+  const supabase = await createServerSupabase();
+  const { data, error } = await supabase
+    .from("patients")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error) return null;
+  return data;
+}
+
 export async function getPatients(search?: string) {
   const supabase = await createServerSupabase();
   let query = supabase.from("patients").select("*").order("name");

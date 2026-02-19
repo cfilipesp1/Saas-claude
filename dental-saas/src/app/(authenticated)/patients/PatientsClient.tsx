@@ -7,7 +7,7 @@ import {
   deletePatient,
 } from "@/actions/patients";
 import { Patient } from "@/lib/types";
-import { Plus, Pencil, Trash2, X, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Search, Eye } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 export default function PatientsClient({
@@ -194,22 +194,38 @@ export default function PatientsClient({
             )}
             {initialData.map((p) => (
               <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-3 font-medium text-slate-800">{p.name}</td>
+                <td className="px-4 py-3 font-medium">
+                  <button
+                    onClick={() => router.push(`/patients/${p.id}`)}
+                    className="text-cyan-700 hover:text-cyan-800 hover:underline text-left"
+                  >
+                    {p.name}
+                  </button>
+                </td>
                 <td className="px-4 py-3 text-slate-600">{p.phone || "—"}</td>
                 <td className="px-4 py-3 text-slate-600 hidden sm:table-cell">{p.cpf || "—"}</td>
                 <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{p.email || "—"}</td>
                 <td className="px-4 py-3 text-right space-x-2">
                   <button
+                    onClick={() => router.push(`/patients/${p.id}`)}
+                    title="Abrir cadastro"
+                    className="text-slate-400 hover:text-cyan-600 transition"
+                  >
+                    <Eye size={16} />
+                  </button>
+                  <button
                     onClick={() => {
                       setEditing(p);
                       setShowForm(false);
                     }}
+                    title="Edição rápida"
                     className="text-slate-400 hover:text-cyan-600 transition"
                   >
                     <Pencil size={16} />
                   </button>
                   <button
                     onClick={() => handleDelete(p.id)}
+                    title="Excluir"
                     className="text-slate-400 hover:text-red-600 transition"
                   >
                     <Trash2 size={16} />
