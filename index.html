@@ -420,9 +420,8 @@
       const [loginError, setLoginError] = useState("");
 
       // ── Data State ──
-      const [patients, setPatients] = useState(() => {
-        try { return (JSON.parse(localStorage.getItem("dental_patients")) || []).map(migratePatient); } catch { return []; }
-      });
+      const [patients, setPatients] = useState([]);
+      const [loadingPatients, setLoadingPatients] = useState(true);
       const [auditLogs, setAuditLogs] = useState(() => {
         try { return JSON.parse(localStorage.getItem("dental_audit")) || []; } catch { return []; }
       });
@@ -497,20 +496,180 @@
               };
               setCurrentUser(localUser);
             }
+          } else {
+            setLoadingPatients(false);
           }
         };
         restoreSession();
       }, []);
 
+      // ── Migração de Dados Antigos ──
+      const migrateOldDataToSupabase = async () => {
+        try {
+          const oldPatients = JSON.parse(localStorage.getItem("dental_patients")) || [];
+          if (oldPatients.length === 0) return { migrated: 0, errors: 0 };
+          
+          let migrated = 0;
+          let errors = 0;
+          
+          for (const oldPatient of oldPatients) {
+            try {
+              // Inserir paciente no Supabase
+              const { data, error } = await supabase
+                .from('patients')
+                .insert({
+                  clinic_id: currentUser.clinic_id,
+                  codigo: oldPatient.codigo || null,
+                  name: oldPatient.name,
+                  birth_date: oldPatient.birthDate || null,
+                  phone: oldPatient.phone || null,
+                  email: oldPatient.email || null,
+                  cpf: oldPatient.cpf || null,
+                  address: oldPatient.address || null,
+                  responsavel_clinico_id: oldPatient.responsavel_clinico_id || null,
+                  responsavel_orto_id: oldPatient.responsavel_orto_id || null
+                })
+                .select()
+                .single();
+              
+              if (error) throw error;
+              
+              // Salvar dados relacionados no LocalStorage com novo ID
+              if (oldPatient.anamnesis) saveLocalData('anamnesis', data.id, oldPatient.anamnesis);
+              if (oldPatient.records) saveLocalData('records', data.id, oldPatient.records);
+              if (oldPatient.documents) saveLocalData('documents', data.id, oldPatient.documents);
+              if (oldPatient.responsavelHistory) saveLocalData('responsavelHistory', data.id, oldPatient.responsavelHistory);
+              if (oldPatient.arrivalControl) saveLocalData('arrivalControl', data.id, oldPatient.arrivalControl);
+              if (oldPatient.financeiro) saveLocalData('financeiro', data.id, oldPatient.financeiro);
+              
+              migrated++;
+            } catch (err) {
+              console.error(`Erro ao migrar paciente ${oldPatient.name}:`, err);
+              errors++;
+            }
+          }
+          
+          // Limpar dados antigos após migração bem-sucedida
+          if (migrated > 0 && errors === 0) {
+            localStorage.removeItem("dental_patients");
+          }
+          
+          return { migrated, errors, total: oldPatients.length };
+        } catch (err) {
+          console.error('Erro na migração:', err);
+          return { migrated: 0, errors: 0, total: 0 };
+        }
+      };
+
+      // ── Load Patients from Supabase ──
+      useEffect(() => {
+        const loadPatients = async () => {
+          if (!currentUser || !currentUser.clinic_id) {
+            setLoadingPatients(false);
+            return;
+          }
+          
+          try {
+            // Verificar se há dados antigos para migrar
+            const oldPatients = JSON.parse(localStorage.getItem("dental_patients") || "[]");
+            if (oldPatients.length > 0) {
+              const shouldMigrate = confirm(
+                `Encontramos ${oldPatients.length} paciente(s) no sistema antigo.\n\n` +
+                `Deseja migrá-los para o novo sistema Supabase?\n\n` +
+                `(Recomendado: clique em OK para migrar)`
+              );
+              
+              if (shouldMigrate) {
+                const result = await migrateOldDataToSupabase();
+                if (result.migrated > 0) {
+                  alert(
+                    `Migração concluída!\n\n` +
+                    `✅ ${result.migrated} paciente(s) migrado(s) com sucesso\n` +
+                    (result.errors > 0 ? `⚠️ ${result.errors} erro(s)` : '')
+                  );
+                }
+              }
+            }
+            
+            // Carregar pacientes do Supabase
+            const { data, error } = await supabase
+              .from('patients')
+              .select('*')
+              .eq('clinic_id', currentUser.clinic_id)
+              .order('created_at', { ascending: false });
+            
+            if (error) throw error;
+            
+            // Converter para formato local (híbrido)
+            const patientsData = data.map(p => ({
+              ...p,
+              birthDate: p.birth_date,
+              // Dados ainda no LocalStorage (temporário)
+              anamnesis: getLocalData('anamnesis', p.id) || {...defaultAnamnesis},
+              records: getLocalData('records', p.id) || [],
+              documents: getLocalData('documents', p.id) || [],
+              responsavelHistory: getLocalData('responsavelHistory', p.id) || [],
+              arrivalControl: getLocalData('arrivalControl', p.id) || null,
+              financeiro: getLocalData('financeiro', p.id) || { orcamento_total: 0, pagamentos: [] },
+              createdAt: p.created_at
+            }));
+            
+            setPatients(patientsData);
+          } catch (err) {
+            console.error('Erro ao carregar pacientes:', err);
+            // Fallback para LocalStorage se houver erro
+            try {
+              const localPatients = JSON.parse(localStorage.getItem("dental_patients")) || [];
+              setPatients(localPatients.map(migratePatient));
+            } catch {
+              setPatients([]);
+            }
+          } finally {
+            setLoadingPatients(false);
+          }
+        };
+        
+        loadPatients();
+      }, [currentUser]);
+
       // ── Persist (with error handling to prevent UI freeze) ──
       const safeSave = (key, data) => { try { localStorage.setItem(key, JSON.stringify(data)); } catch(e) { console.warn("localStorage save failed for", key, e.message); } };
       useEffect(() => { safeSave("dental_users", users); }, [users]);
-      useEffect(() => { safeSave("dental_patients", patients); }, [patients]);
+      // Pacientes agora são salvos no Supabase, não no localStorage
+      // useEffect(() => { safeSave("dental_patients", patients); }, [patients]);
       useEffect(() => { safeSave("dental_audit", auditLogs); }, [auditLogs]);
       useEffect(() => { if (currentUser) safeSave("dental_session", currentUser); else localStorage.removeItem("dental_session"); }, [currentUser]);
 
       // ── Helpers ──
       const getUserName = (id) => { const u = users.find(x => x.id === id); return u ? u.name : "—"; };
+      
+      // Helper para gerenciar dados locais temporários (até migrar para Supabase)
+      const getLocalData = (type, patientId) => {
+        try {
+          const key = `patient_${type}_${patientId}`;
+          const data = localStorage.getItem(key);
+          return data ? JSON.parse(data) : null;
+        } catch {
+          return null;
+        }
+      };
+      
+      const saveLocalData = (type, patientId, data) => {
+        try {
+          const key = `patient_${type}_${patientId}`;
+          localStorage.setItem(key, JSON.stringify(data));
+        } catch (e) {
+          console.warn(`Erro ao salvar ${type} local:`, e);
+        }
+      };
+      
+      const removeLocalData = (patientId) => {
+        ['anamnesis', 'records', 'documents', 'responsavelHistory', 'arrivalControl', 'financeiro'].forEach(type => {
+          try {
+            localStorage.removeItem(`patient_${type}_${patientId}`);
+          } catch {}
+        });
+      };
       const isAdmin = currentUser?.role === "admin";
       const activeDentists = users.filter(u => u.active && u.role !== "admin");
 
@@ -582,22 +741,86 @@
       };
 
       // ── Patient CRUD ──
-      const createPatient = () => {
+      const createPatient = async () => {
         if (!npForm.name.trim() || (!npForm.responsavel_clinico_id && !npForm.responsavel_orto_id)) return;
-        const p = { id:generateId(), ...npForm, anamnesis:{...defaultAnamnesis}, records:[], documents:[], responsavelHistory:[], createdAt:new Date().toISOString() };
-        setPatients(prev => [p, ...prev]);
-        setNpForm({ codigo:"", name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
-        setShowNewPatient(false);
-        setSelectedPatient(p);
-        setView("patient");
-        addAudit("CRIAR_PACIENTE","paciente",p.id,p.name, `Resp. Clínico: ${getUserName(npForm.responsavel_clinico_id)}, Resp. Orto: ${getUserName(npForm.responsavel_orto_id)}`);
+        
+        try {
+          const { data, error } = await supabase
+            .from('patients')
+            .insert({
+              clinic_id: currentUser.clinic_id,
+              codigo: npForm.codigo || null,
+              name: npForm.name,
+              birth_date: npForm.birthDate || null,
+              phone: npForm.phone || null,
+              email: npForm.email || null,
+              cpf: npForm.cpf || null,
+              address: npForm.address || null,
+              responsavel_clinico_id: npForm.responsavel_clinico_id || null,
+              responsavel_orto_id: npForm.responsavel_orto_id || null
+            })
+            .select()
+            .single();
+          
+          if (error) throw error;
+          
+          // Converter para formato local (híbrido)
+          const newPatient = {
+            ...data,
+            birthDate: data.birth_date,
+            anamnesis: {...defaultAnamnesis},
+            records: [],
+            documents: [],
+            responsavelHistory: [],
+            arrivalControl: null,
+            financeiro: { orcamento_total: 0, pagamentos: [] },
+            createdAt: data.created_at
+          };
+          
+          // Salvar dados locais temporários
+          saveLocalData('anamnesis', newPatient.id, newPatient.anamnesis);
+          saveLocalData('records', newPatient.id, newPatient.records);
+          saveLocalData('documents', newPatient.id, newPatient.documents);
+          saveLocalData('responsavelHistory', newPatient.id, newPatient.responsavelHistory);
+          saveLocalData('financeiro', newPatient.id, newPatient.financeiro);
+          
+          setPatients(prev => [newPatient, ...prev]);
+          setNpForm({ codigo:"", name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
+          setShowNewPatient(false);
+          setSelectedPatient(newPatient);
+          setView("patient");
+          addAudit("CRIAR_PACIENTE","paciente",newPatient.id,newPatient.name, `Resp. Clínico: ${getUserName(npForm.responsavel_clinico_id)}, Resp. Orto: ${getUserName(npForm.responsavel_orto_id)}`);
+        } catch (err) {
+          console.error('Erro ao criar paciente:', err);
+          alert('Erro ao criar paciente. Verifique os dados e tente novamente.');
+        }
       };
 
-      const deletePatient = (id) => {
+      const deletePatient = async (id) => {
         const p = patients.find(x => x.id === id);
-        setPatients(prev => prev.filter(x => x.id !== id));
-        setSelectedPatient(null); setView("list");
-        if (p) addAudit("EXCLUIR_PACIENTE","paciente",id,p.name,"");
+        if (!p) return;
+        
+        if (!confirm(`Deseja realmente excluir o paciente ${p.name}? Esta ação não pode ser desfeita.`)) return;
+        
+        try {
+          const { error } = await supabase
+            .from('patients')
+            .delete()
+            .eq('id', id);
+          
+          if (error) throw error;
+          
+          // Remover dados locais
+          removeLocalData(id);
+          
+          setPatients(prev => prev.filter(x => x.id !== id));
+          setSelectedPatient(null);
+          setView("list");
+          addAudit("EXCLUIR_PACIENTE","paciente",id,p.name,"");
+        } catch (err) {
+          console.error('Erro ao excluir paciente:', err);
+          alert('Erro ao excluir paciente. Tente novamente.');
+        }
       };
 
       const openPatient = (p) => {
@@ -608,6 +831,9 @@
 
       // ── Anamnesis ──
       const saveAnamnesis = () => {
+        // Salvar anamnesis no LocalStorage (temporário - será migrado na Fase 3)
+        saveLocalData('anamnesis', selectedPatient.id, anamnesisForm);
+        
         setPatients(prev => prev.map(p => p.id===selectedPatient.id ? {...p, anamnesis:{...anamnesisForm}} : p));
         setSelectedPatient(prev => ({...prev, anamnesis:{...anamnesisForm}}));
         setEditingAnamnesis(false);
@@ -615,7 +841,7 @@
       };
 
       // ── Change Responsible ──
-      const saveResponsible = () => {
+      const saveResponsible = async () => {
         const changes = [];
         if (respForm.responsavel_clinico_id !== selectedPatient.responsavel_clinico_id) {
           changes.push({ date:new Date().toISOString(), changedBy:currentUser.id, changedByName:currentUser.name, field:"responsavel_clinico_id", from:selectedPatient.responsavel_clinico_id, fromName:getUserName(selectedPatient.responsavel_clinico_id), to:respForm.responsavel_clinico_id, toName:getUserName(respForm.responsavel_clinico_id) });
@@ -624,11 +850,33 @@
           changes.push({ date:new Date().toISOString(), changedBy:currentUser.id, changedByName:currentUser.name, field:"responsavel_orto_id", from:selectedPatient.responsavel_orto_id, fromName:getUserName(selectedPatient.responsavel_orto_id), to:respForm.responsavel_orto_id, toName:getUserName(respForm.responsavel_orto_id) });
         }
         if (changes.length === 0) { setShowChangeResp(false); return; }
-        const updated = { ...selectedPatient, responsavel_clinico_id:respForm.responsavel_clinico_id, responsavel_orto_id:respForm.responsavel_orto_id, responsavelHistory:[...selectedPatient.responsavelHistory, ...changes] };
-        setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
-        setSelectedPatient(updated);
-        setShowChangeResp(false);
-        addAudit("ALTERAR_RESPONSAVEL","paciente",selectedPatient.id,selectedPatient.name, changes.map(c => `${c.field==="responsavel_clinico_id"?"Clínico":"Orto"}: ${c.fromName} → ${c.toName}`).join("; "));
+        
+        try {
+          // Atualizar no Supabase
+          const { error } = await supabase
+            .from('patients')
+            .update({
+              responsavel_clinico_id: respForm.responsavel_clinico_id || null,
+              responsavel_orto_id: respForm.responsavel_orto_id || null
+            })
+            .eq('id', selectedPatient.id);
+          
+          if (error) throw error;
+          
+          const newHistory = [...selectedPatient.responsavelHistory, ...changes];
+          const updated = { ...selectedPatient, responsavel_clinico_id:respForm.responsavel_clinico_id, responsavel_orto_id:respForm.responsavel_orto_id, responsavelHistory:newHistory };
+          
+          // Salvar histórico no LocalStorage (temporário)
+          saveLocalData('responsavelHistory', selectedPatient.id, newHistory);
+          
+          setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
+          setSelectedPatient(updated);
+          setShowChangeResp(false);
+          addAudit("ALTERAR_RESPONSAVEL","paciente",selectedPatient.id,selectedPatient.name, changes.map(c => `${c.field==="responsavel_clinico_id"?"Clínico":"Orto"}: ${c.fromName} → ${c.toName}`).join("; "));
+        } catch (err) {
+          console.error('Erro ao alterar responsável:', err);
+          alert('Erro ao alterar responsável. Tente novamente.');
+        }
       };
 
       // ── Arrival Control ──
@@ -1025,7 +1273,12 @@
                   style={{ flex:1, minWidth:200, padding:"12px 16px", borderRadius:12, border:"1.5px solid #CBD5E1", fontSize:14, outline:"none", background:"#fff", boxSizing:"border-box" }} />
                 <button onClick={() => setShowNewPatient(true)} style={btnPrimary}>+ Novo Paciente</button>
               </div>
-              {filteredPatients.length === 0 && (
+              {loadingPatients ? (
+                <div style={{ textAlign:"center", padding:60, color:"#94A3B8" }}>
+                  <div style={{ fontSize:48, marginBottom:12 }}>⏳</div>
+                  <div style={{ fontSize:16, fontWeight:600 }}>Carregando pacientes...</div>
+                </div>
+              ) : filteredPatients.length === 0 && (
                 <div style={{ textAlign:"center", padding:60, color:"#94A3B8" }}>
                   <div style={{ fontSize:48, marginBottom:12 }}>🦷</div>
                   <div style={{ fontSize:16, fontWeight:600 }}>Nenhum paciente cadastrado</div>
