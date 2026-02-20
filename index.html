@@ -460,7 +460,7 @@
       const [arrivalPatientId, setArrivalPatientId] = useState(null);
 
       // ── Forms ──
-      const [npForm, setNpForm] = useState({ codigo:"", name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
+      const [npForm, setNpForm] = useState({ codigo:"", name:"", birthDate:"", phone:"", email:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
       const emptyNrForm = { date:formatDateISO(new Date()), tipo_atendimento:"", specialty:"", procedures:[], teeth:[], notes:"", nextAppointment:"", signature:"", photos:[], wireInfo:{upper:{material:"",format:"",gauge:""},lower:{material:"",format:"",gauge:""}} };
       const [nrForm, setNrForm] = useState({...emptyNrForm});
       const [anamnesisForm, setAnamnesisForm] = useState({...defaultAnamnesis});
@@ -530,12 +530,14 @@
                 .from('patients')
                 .insert({
                   clinic_id: currentUser.clinic_id,
+                  codigo: oldPatient.codigo || '',
                   name: oldPatient.name,
                   birth_date: oldPatient.birthDate || null,
                   phone: oldPatient.phone || '',
                   email: oldPatient.email || '',
-                  cpf: oldPatient.cpf || '',
-                  notes: ''
+                  address: oldPatient.address || '',
+                  responsavel_clinico_id: oldPatient.responsavel_clinico_id || '',
+                  responsavel_orto_id: oldPatient.responsavel_orto_id || ''
                 })
                 .select()
                 .single();
@@ -610,14 +612,9 @@
             
             // Converter para formato local (híbrido)
             const patientsData = data.map(p => {
-              const extra = getLocalData('extraFields', p.id) || {};
               return {
                 ...p,
                 birthDate: p.birth_date,
-                codigo: extra.codigo || "",
-                address: extra.address || "",
-                responsavel_clinico_id: extra.responsavel_clinico_id || "",
-                responsavel_orto_id: extra.responsavel_orto_id || "",
                 // Dados ainda no LocalStorage (temporário)
                 anamnesis: getLocalData('anamnesis', p.id) || {...defaultAnamnesis},
                 records: getLocalData('records', p.id) || [],
@@ -881,14 +878,9 @@
                   setPatients(prev => {
                     // Evitar duplicatas
                     if (prev.find(p => p.id === newRecord.id)) return prev;
-                    const extra = getLocalData('extraFields', newRecord.id) || {};
                     const enriched = {
                       ...newRecord,
                       birthDate: newRecord.birth_date,
-                      codigo: extra.codigo || "",
-                      address: extra.address || "",
-                      responsavel_clinico_id: extra.responsavel_clinico_id || "",
-                      responsavel_orto_id: extra.responsavel_orto_id || "",
                       anamnesis: getLocalData('anamnesis', newRecord.id) || {...defaultAnamnesis},
                       records: getLocalData('records', newRecord.id) || [],
                       documents: getLocalData('documents', newRecord.id) || [],
@@ -1123,12 +1115,14 @@
 
           const insertPayload = {
             clinic_id: currentUser.clinic_id,
+            codigo: npForm.codigo || '',
             name: npForm.name.trim(),
             birth_date: npForm.birthDate || null,
             phone: npForm.phone || '',
             email: npForm.email || '',
-            cpf: npForm.cpf || '',
-            notes: ''
+            address: npForm.address || '',
+            responsavel_clinico_id: npForm.responsavel_clinico_id || '',
+            responsavel_orto_id: npForm.responsavel_orto_id || ''
           };
 
           const { data, error } = await supabase
@@ -1142,10 +1136,6 @@
           // Converter para formato local (híbrido)
           const newPatient = {
             ...data,
-            codigo: npForm.codigo || "",
-            address: npForm.address || "",
-            responsavel_clinico_id: npForm.responsavel_clinico_id || "",
-            responsavel_orto_id: npForm.responsavel_orto_id || "",
             birthDate: data.birth_date,
             anamnesis: {...defaultAnamnesis},
             records: [],
@@ -1156,16 +1146,15 @@
             createdAt: data.created_at
           };
 
-          // Salvar dados locais temporários (campos extras que não estão no DB)
+          // Salvar dados locais temporários (campos que ainda não estão no DB)
           saveLocalData('anamnesis', newPatient.id, newPatient.anamnesis);
           saveLocalData('records', newPatient.id, newPatient.records);
           saveLocalData('documents', newPatient.id, newPatient.documents);
           saveLocalData('responsavelHistory', newPatient.id, newPatient.responsavelHistory);
           saveLocalData('financeiro', newPatient.id, newPatient.financeiro);
-          saveLocalData('extraFields', newPatient.id, { codigo: npForm.codigo || "", address: npForm.address || "", responsavel_clinico_id: npForm.responsavel_clinico_id || "", responsavel_orto_id: npForm.responsavel_orto_id || "" });
 
           setPatients(prev => [newPatient, ...prev]);
-          setNpForm({ codigo:"", name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
+          setNpForm({ codigo:"", name:"", birthDate:"", phone:"", email:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
           setShowNewPatient(false);
           setSelectedPatient(newPatient);
           setView("patient");
@@ -1345,13 +1334,18 @@
         if (changes.length === 0) { setShowChangeResp(false); return; }
         
         try {
-          // Responsáveis são armazenados localmente (colunas não existem no DB)
           const newHistory = [...selectedPatient.responsavelHistory, ...changes];
           const updated = { ...selectedPatient, responsavel_clinico_id:respForm.responsavel_clinico_id, responsavel_orto_id:respForm.responsavel_orto_id, responsavelHistory:newHistory };
 
-          // Salvar no LocalStorage
+          // Salvar responsáveis no Supabase
+          const { error: updErr } = await supabase
+            .from('patients')
+            .update({ responsavel_clinico_id: respForm.responsavel_clinico_id || '', responsavel_orto_id: respForm.responsavel_orto_id || '' })
+            .eq('id', selectedPatient.id);
+          if (updErr) throw updErr;
+
+          // Histórico ainda no localStorage
           saveLocalData('responsavelHistory', selectedPatient.id, newHistory);
-          saveLocalData('extraFields', selectedPatient.id, { codigo: selectedPatient.codigo || "", address: selectedPatient.address || "", responsavel_clinico_id: respForm.responsavel_clinico_id || "", responsavel_orto_id: respForm.responsavel_orto_id || "" });
           
           setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
           setSelectedPatient(updated);
@@ -1742,7 +1736,7 @@
       const toggleProcedure = (proc) => setNrForm(prev => ({...prev, procedures: prev.procedures.includes(proc) ? prev.procedures.filter(p=>p!==proc) : [...prev.procedures, proc]}));
       const toggleTooth = (t) => setNrForm(prev => ({...prev, teeth: prev.teeth.includes(t) ? prev.teeth.filter(x=>x!==t) : [...prev.teeth, t]}));
 
-      const filteredPatients = patients.filter(p => { const s = searchTerm.toLowerCase(); return p.name.toLowerCase().includes(s) || (p.cpf && p.cpf.includes(searchTerm)) || (p.phone && p.phone.includes(searchTerm)) || (p.codigo && p.codigo.toLowerCase().includes(s)); });
+      const filteredPatients = patients.filter(p => { const s = searchTerm.toLowerCase(); return p.name.toLowerCase().includes(s) || (p.phone && p.phone.includes(searchTerm)) || (p.email && p.email.toLowerCase().includes(s)) || (p.codigo && p.codigo.toLowerCase().includes(s)); });
 
       const needsWireInfo = nrForm.tipo_atendimento === "ORTODONTIA" && nrForm.procedures.length > 0;
       const geralSpecOpts = [{ value:"", label:"Selecione..." }, ...Object.entries(SPECIALTIES).filter(([k])=>k!=="ortodontia").map(([k,v])=>({ value:k, label:`${v.icon} ${v.label}` }))];
@@ -1847,7 +1841,7 @@
           {view === "list" && (
             <div style={{ padding:"20px 24px", maxWidth:800, margin:"0 auto" }}>
               <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
-                <input placeholder="Buscar por código, nome, CPF ou telefone..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                <input placeholder="Buscar por código, nome, email ou telefone..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
                   style={{ flex:1, minWidth:200, padding:"12px 16px", borderRadius:12, border:"1.5px solid #CBD5E1", fontSize:14, outline:"none", background:"#fff", boxSizing:"border-box" }} />
                 <button onClick={() => setShowNewPatient(true)} style={btnPrimary}>+ Novo Paciente</button>
               </div>
@@ -1880,7 +1874,7 @@
                           )}
                         </div>
                         <div style={{ fontSize:12, color:"#64748B", marginTop:4 }}>
-                          {p.phone && `${p.phone}`}{p.cpf && ` · CPF: ${p.cpf}`}
+                          {p.phone && `${p.phone}`}{p.email && ` · ${p.email}`}
                         </div>
                         <div style={{ fontSize:11, color:"#94A3B8", marginTop:4 }}>
                           Clínico: <strong>{getUserName(p.responsavel_clinico_id)}</strong> · Orto: <strong>{getUserName(p.responsavel_orto_id)}</strong>
@@ -1927,7 +1921,7 @@
                     <div style={{ fontSize:13, color:"#64748B", marginTop:4, lineHeight:1.8 }}>
                       {selectedPatient.birthDate && <span>Nasc: {formatDate(selectedPatient.birthDate+"T12:00:00")} </span>}
                       {selectedPatient.phone && <span>Tel: {selectedPatient.phone} </span>}
-                      {selectedPatient.cpf && <span>CPF: {selectedPatient.cpf} </span>}
+                      {selectedPatient.codigo && <span>Cód: {selectedPatient.codigo} </span>}
                       {selectedPatient.email && <span>Email: {selectedPatient.email} </span>}
                       {selectedPatient.address && <div>Endereço: {selectedPatient.address}</div>}
                     </div>
@@ -2163,7 +2157,7 @@
                             <span style={{ fontSize:16, fontWeight:700 }}>{p.name}</span>
                           </div>
                           <div style={{ fontSize:12, color:"#64748B", marginBottom:4 }}>
-                            {p.phone && `${p.phone}`}{p.cpf && ` · CPF: ${p.cpf}`}
+                            {p.phone && `${p.phone}`}{p.email && ` · ${p.email}`}
                           </div>
                           <div style={{ fontSize:12, color:"#10B981", fontWeight:600 }}>
                             {isAdminRole(currentUser.role) && (
@@ -2210,7 +2204,7 @@
                             </span>
                           </div>
                           <div style={{ fontSize:12, color:"#64748B", marginBottom:4 }}>
-                            {p.phone && `${p.phone}`}{p.cpf && ` · CPF: ${p.cpf}`}
+                            {p.phone && `${p.phone}`}{p.email && ` · ${p.email}`}
                           </div>
                           <div style={{ fontSize:12, color:"#10B981", fontWeight:600 }}>
                             {isAdminRole(currentUser.role) && (
@@ -2252,10 +2246,7 @@
               <Input label="Data de Nascimento" type="date" value={npForm.birthDate} onChange={e => setNpForm({...npForm, birthDate:e.target.value})} />
               <Input label="Telefone" value={npForm.phone} onChange={e => setNpForm({...npForm, phone:e.target.value})} placeholder="(00) 00000-0000" />
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-              <Input label="CPF" value={npForm.cpf} onChange={e => setNpForm({...npForm, cpf:e.target.value})} placeholder="000.000.000-00" />
-              <Input label="Email" type="email" value={npForm.email} onChange={e => setNpForm({...npForm, email:e.target.value})} placeholder="email@exemplo.com" />
-            </div>
+            <Input label="Email" type="email" value={npForm.email} onChange={e => setNpForm({...npForm, email:e.target.value})} placeholder="email@exemplo.com" />
             <Input label="Endereço" value={npForm.address} onChange={e => setNpForm({...npForm, address:e.target.value})} placeholder="Endereço completo" />
             <div style={{ marginTop:8, paddingTop:16, borderTop:"2px dashed #E2E8F0" }}>
               <div style={{ fontSize:14, fontWeight:700, color:"#334155", marginBottom:4 }}>Responsáveis</div>

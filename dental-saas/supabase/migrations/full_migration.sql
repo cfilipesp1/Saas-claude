@@ -37,15 +37,17 @@ create table public.professionals (
 );
 
 create table public.patients (
-  id         uuid primary key default gen_random_uuid(),
-  clinic_id  uuid not null references public.clinics(id) on delete cascade,
-  name       text not null,
-  phone      text not null default '',
-  email      text not null default '',
-  cpf        text not null default '',
-  birth_date date,
-  notes      text not null default '',
-  created_at timestamptz not null default now()
+  id                     uuid primary key default gen_random_uuid(),
+  clinic_id              uuid not null references public.clinics(id) on delete cascade,
+  codigo                 text not null default '',
+  name                   text not null,
+  birth_date             date,
+  phone                  text not null default '',
+  email                  text not null default '',
+  address                text not null default '',
+  responsavel_clinico_id text not null default '',
+  responsavel_orto_id    text not null default '',
+  created_at             timestamptz not null default now()
 );
 
 create table public.waitlist_entries (
