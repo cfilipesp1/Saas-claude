@@ -47,8 +47,9 @@
     const { useState, useEffect, useRef, useCallback } = React;
 
     // ─── CONSTANTS ───────────────────────────────────────────────────────
-    const ROLES = { ADMIN: "admin", DENTISTA: "dentista", ORTO: "orto", RECEPCAO: "recepcao" };
-    const ROLE_LABELS = { admin: "Administrador", dentista: "Dentista", orto: "Ortodontista", recepcao: "Recepcionista" };
+    const ROLES = { OWNER: "OWNER", ADMIN: "ADMIN", MANAGER: "MANAGER", PROFESSIONAL: "PROFESSIONAL", RECEPTION: "RECEPTION" };
+    const ROLE_LABELS = { OWNER: "Proprietário", ADMIN: "Administrador", MANAGER: "Gerente", PROFESSIONAL: "Profissional", RECEPTION: "Recepcionista" };
+    const isAdminRole = (r) => r === "ADMIN" || r === "OWNER";
     const RECORD_TYPES = { ORTODONTIA: "ORTODONTIA", GERAL: "GERAL" };
     const MAX_FILE_SIZE = 50 * 1024 * 1024;
     const ALLOWED_FILE_TYPES = ["image/jpeg","image/png","image/webp","image/gif","application/pdf",
@@ -142,20 +143,8 @@
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6aXh4ZHRia3RzenRkdHBhZHdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDcwNjEsImV4cCI6MjA4NzAyMzA2MX0.DqgAyHB_QPzkz21RFXYf-fN1IzxyxoX4mMzqr3KMIww';
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // Role mapping: LocalStorage → Supabase ENUM
-    const ROLE_TO_ENUM = {
-      'admin': 'ADMIN',
-      'dentista': 'PROFESSIONAL',
-      'orto': 'PROFESSIONAL',
-      'recepcao': 'RECEPTION'
-    };
-    const ENUM_TO_ROLE = {
-      'ADMIN': 'admin',
-      'OWNER': 'admin',
-      'PROFESSIONAL': 'dentista',
-      'RECEPTION': 'recepcao',
-      'MANAGER': 'admin'
-    };
+    // Role values now match the DB enum directly (OWNER, ADMIN, MANAGER, RECEPTION, PROFESSIONAL)
+    // No mapping needed — app uses DB enum values as-is
 
     // ─── UTILITIES ───────────────────────────────────────────────────────
     const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
@@ -214,7 +203,7 @@
     // Default admin stub (no credentials — auth is handled by Supabase)
     const DEFAULT_ADMIN = {
       id: "admin1", name: "Administrador", login: "",
-      role: "admin", specialty: "", active: true, createdAt: new Date().toISOString(),
+      role: "ADMIN", specialty: "", active: true, createdAt: new Date().toISOString(),
     };
 
     // ─── INDEXEDDB FILE STORAGE ─────────────────────────────────────────
@@ -475,7 +464,7 @@
       const emptyNrForm = { date:formatDateISO(new Date()), tipo_atendimento:"", specialty:"", procedures:[], teeth:[], notes:"", nextAppointment:"", signature:"", photos:[], wireInfo:{upper:{material:"",format:"",gauge:""},lower:{material:"",format:"",gauge:""}} };
       const [nrForm, setNrForm] = useState({...emptyNrForm});
       const [anamnesisForm, setAnamnesisForm] = useState({...defaultAnamnesis});
-      const [userForm, setUserForm] = useState({ id:"", name:"", login:"", password:"", role:"dentista", active:true });
+      const [userForm, setUserForm] = useState({ id:"", name:"", login:"", password:"", role:"PROFESSIONAL", active:true });
       const [editingUserId, setEditingUserId] = useState(null);
       const [respForm, setRespForm] = useState({ responsavel_clinico_id:"", responsavel_orto_id:"" });
       const [respCheckMotivo, setRespCheckMotivo] = useState("");
@@ -510,7 +499,7 @@
                 id: profile.user_id,
                 name: profile.full_name || session.user.email,
                 login: session.user.email,
-                role: ENUM_TO_ROLE[profile.role] || 'recepcao',
+                role: profile.role || 'RECEPTION',
                 specialty: '',
                 active: true,
                 clinic_id: profile.clinic_id,
@@ -710,8 +699,8 @@
           } catch {}
         });
       };
-      const isAdmin = currentUser?.role === "admin";
-      const activeDentists = users.filter(u => u.active && u.role !== "admin");
+      const isAdmin = isAdminRole(currentUser?.role);
+      const activeDentists = users.filter(u => u.active && u.role === "PROFESSIONAL");
 
       const addAudit = (action, targetType, targetId, targetName, details) => {
         setAuditLogs(prev => [{ id:generateId(), userId:currentUser?.id, userName:currentUser?.name, action, targetType, targetId, targetName, details: details||"", timestamp:new Date().toISOString(), userAgent:navigator.userAgent }, ...prev]);
@@ -750,7 +739,7 @@
             id: profile.user_id,
             name: profile.full_name || authData.user.email,
             login: authData.user.email,
-            role: ENUM_TO_ROLE[profile.role] || 'recepcao',
+            role: profile.role || 'RECEPTION',
             specialty: '',
             active: true,
             clinic_id: profile.clinic_id,
@@ -1713,7 +1702,7 @@
           addAudit("CRIAR_USUARIO","usuario",nu.id,nu.name,`Perfil: ${ROLE_LABELS[nu.role]}`);
         }
         setShowUserForm(false); setEditingUserId(null);
-        setUserForm({ id:"", name:"", login:"", password:"", role:"dentista", active:true });
+        setUserForm({ id:"", name:"", login:"", password:"", role:"PROFESSIONAL", active:true });
       };
 
       // ── Procedure/Tooth toggles ──
@@ -1784,10 +1773,10 @@
               )}
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-              {(currentUser.role === "dentista" || currentUser.role === "orto" || currentUser.role === "admin") && (
+              {(currentUser.role === "PROFESSIONAL" || isAdminRole(currentUser.role)) && (
                 <button onClick={() => setView("queue")} style={{ background: view==="queue"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>
                   ⏳ Fila de Atendimento
-                  {currentUser.role === "admin" ? (
+                  {isAdminRole(currentUser.role) ? (
                     patients.filter(p => p.arrivalControl?.status === "aguardando").length > 0 && (
                       <span style={{ background:"#10B981", borderRadius:"50%", width:18, height:18, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700 }}>
                         {patients.filter(p => p.arrivalControl?.status === "aguardando").length}
@@ -1802,7 +1791,7 @@
                   )}
                 </button>
               )}
-              {(currentUser.role === "admin" || currentUser.role === "recepcao") && (
+              {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && (
                 <button onClick={() => setShowRelatorio(true)} style={{ background:"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600 }}>📊 Relatórios</button>
               )}
               {isAdmin && (
@@ -1872,7 +1861,7 @@
                       <div style={{ textAlign:"right" }}>
                         <div style={{ fontSize:11, color:"#94A3B8" }}>{formatDate(p.createdAt)}</div>
                         <div style={{ fontSize:12, fontWeight:700, color:"#0EA5E9", marginTop:4, background:"#0EA5E910", padding:"2px 8px", borderRadius:6 }}>{(p.records || []).length} atend.</div>
-                        {(currentUser.role === "admin" || currentUser.role === "recepcao") && p.financeiro && p.financeiro.orcamento_total > 0 && (
+                        {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && p.financeiro && p.financeiro.orcamento_total > 0 && (
                           <div style={{ fontSize:11, fontWeight:700, color: p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + pg.valor, 0) > 0 ? "#EF4444" : "#10B981", marginTop:4, background: p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + pg.valor, 0) > 0 ? "#FEE2E2" : "#D1FAE5", padding:"2px 8px", borderRadius:6 }}>
                             {p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + pg.valor, 0) > 0 ? "⚠️ Devendo" : "✓ Quitado"}
                           </div>
@@ -1880,7 +1869,7 @@
                       </div>
                     </div>
                   </div>
-                  {(currentUser.role === "recepcao" || currentUser.role === "admin") && !p.arrivalControl && (
+                  {(currentUser.role === "RECEPTION" || isAdminRole(currentUser.role)) && !p.arrivalControl && (
                     <button onClick={(e) => { e.stopPropagation(); handleArrival(p.id); }} 
                       style={{ ...btnPrimary, marginTop:12, fontSize:13, padding:"8px 16px", width:"100%" }}>
                       👋 Marcar Chegada
@@ -1931,7 +1920,7 @@
               <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
                 <button onClick={() => { setAnamnesisForm({...defaultAnamnesis, ...selectedPatient.anamnesis}); setShowAnamnesis(true); setEditingAnamnesis(false); }} style={btnSecondary}>Anamnese</button>
                 <button onClick={() => { docInputRef.current?.click(); }} style={btnSecondary}>Anexar Documento</button>
-                {(currentUser.role === "admin" || currentUser.role === "recepcao") && (
+                {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && (
                   <button onClick={() => setShowFinanceiro(true)} style={{...btnSecondary, background:"linear-gradient(135deg,#10B981,#059669)", color:"#fff"}}>💰 Financeiro</button>
                 )}
                 <button onClick={() => setShowNewRecord(true)} style={btnPrimary}>+ Novo Atendimento</button>
@@ -2074,7 +2063,7 @@
             <div style={{ padding:"20px 24px", maxWidth:800, margin:"0 auto" }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
                 <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A" }}>Gestão de Usuários</h2>
-                <button onClick={() => { setUserForm({ id:"", name:"", login:"", password:"", role:"dentista", active:true }); setEditingUserId(null); setShowUserForm(true); }} style={btnPrimary}>+ Novo Usuário</button>
+                <button onClick={() => { setUserForm({ id:"", name:"", login:"", password:"", role:"PROFESSIONAL", active:true }); setEditingUserId(null); setShowUserForm(true); }} style={btnPrimary}>+ Novo Usuário</button>
               </div>
               {users.map(u => (
                 <div key={u.id} style={{ ...cardStyle, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -2120,17 +2109,17 @@
           )}
 
           {/* ═══ QUEUE VIEW ═══ */}
-          {view === "queue" && (currentUser.role === "dentista" || currentUser.role === "orto" || currentUser.role === "admin") && (
+          {view === "queue" && (currentUser.role === "PROFESSIONAL" || isAdminRole(currentUser.role)) && (
             <div style={{ padding:"20px 24px", maxWidth:800, margin:"0 auto" }}>
               <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A", marginBottom:16 }}>Fila de Atendimento</h2>
               
               {/* Aguardando Atendimento */}
               <div style={{ marginBottom:24 }}>
                 <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
-                  ⏳ Aguardando ({patients.filter(p => currentUser.role === "admin" ? p.arrivalControl?.status === "aguardando" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando")).length})
+                  ⏳ Aguardando ({patients.filter(p => isAdminRole(currentUser.role) ? p.arrivalControl?.status === "aguardando" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando")).length})
                 </div>
                 {patients
-                  .filter(p => currentUser.role === "admin" ? p.arrivalControl?.status === "aguardando" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando"))
+                  .filter(p => isAdminRole(currentUser.role) ? p.arrivalControl?.status === "aguardando" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando"))
                   .sort((a, b) => new Date(a.arrivalControl.arrivedAt) - new Date(b.arrivalControl.arrivedAt))
                   .map(p => (
                     <div key={p.id} style={{ ...cardStyle, marginBottom:12 }}>
@@ -2144,7 +2133,7 @@
                             {p.phone && `${p.phone}`}{p.cpf && ` · CPF: ${p.cpf}`}
                           </div>
                           <div style={{ fontSize:12, color:"#10B981", fontWeight:600 }}>
-                            {currentUser.role === "admin" && (
+                            {isAdminRole(currentUser.role) && (
                               <>
                                 Dentista: {p.arrivalControl.dentista_name}
                                 {" · "}
@@ -2161,7 +2150,7 @@
                       </div>
                     </div>
                   ))}
-                {patients.filter(p => currentUser.role === "admin" ? p.arrivalControl?.status === "aguardando" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando")).length === 0 && (
+                {patients.filter(p => isAdminRole(currentUser.role) ? p.arrivalControl?.status === "aguardando" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando")).length === 0 && (
                   <div style={{ textAlign:"center", padding:40, color:"#94A3B8", background:"#F8FAFC", borderRadius:12, border:"1px solid #E2E8F0" }}>
                     <div style={{ fontSize:48, marginBottom:8 }}>☕</div>
                     <div style={{ fontSize:14, fontWeight:600 }}>Nenhum paciente aguardando</div>
@@ -2172,10 +2161,10 @@
               {/* Em Atendimento */}
               <div>
                 <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
-                  👨‍⚕️ Em Atendimento ({patients.filter(p => currentUser.role === "admin" ? p.arrivalControl?.status === "em_atendimento" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "em_atendimento")).length})
+                  👨‍⚕️ Em Atendimento ({patients.filter(p => isAdminRole(currentUser.role) ? p.arrivalControl?.status === "em_atendimento" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "em_atendimento")).length})
                 </div>
                 {patients
-                  .filter(p => currentUser.role === "admin" ? p.arrivalControl?.status === "em_atendimento" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "em_atendimento"))
+                  .filter(p => isAdminRole(currentUser.role) ? p.arrivalControl?.status === "em_atendimento" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "em_atendimento"))
                   .map(p => (
                     <div key={p.id} style={{ ...cardStyle, marginBottom:12, borderColor:"#10B981" }}>
                       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
@@ -2191,7 +2180,7 @@
                             {p.phone && `${p.phone}`}{p.cpf && ` · CPF: ${p.cpf}`}
                           </div>
                           <div style={{ fontSize:12, color:"#10B981", fontWeight:600 }}>
-                            {currentUser.role === "admin" && (
+                            {isAdminRole(currentUser.role) && (
                               <>
                                 Dentista: {p.arrivalControl.dentista_name}
                                 {" · "}
@@ -2211,7 +2200,7 @@
                       </div>
                     </div>
                   ))}
-                {patients.filter(p => currentUser.role === "admin" ? p.arrivalControl?.status === "em_atendimento" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "em_atendimento")).length === 0 && (
+                {patients.filter(p => isAdminRole(currentUser.role) ? p.arrivalControl?.status === "em_atendimento" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "em_atendimento")).length === 0 && (
                   <div style={{ textAlign:"center", padding:40, color:"#94A3B8", background:"#F8FAFC", borderRadius:12, border:"1px solid #E2E8F0" }}>
                     <div style={{ fontSize:14, fontWeight:600 }}>Nenhum atendimento em andamento</div>
                   </div>
@@ -2443,7 +2432,7 @@
             <Input label="Login *" value={userForm.login} onChange={e => setUserForm({...userForm, login:e.target.value})} placeholder="Login de acesso" />
             <Input label={editingUserId ? "Nova Senha (deixe vazio para manter)" : "Senha *"} type="password" value={userForm.password} onChange={e => setUserForm({...userForm, password:e.target.value})} placeholder="Senha" />
             <Select label="Perfil *" value={userForm.role} onChange={e => setUserForm({...userForm, role:e.target.value})}
-              options={[{value:"dentista",label:"Dentista"},{value:"orto",label:"Ortodontista"},{value:"recepcao",label:"Recepcionista"},{value:"admin",label:"Administrador"}]} />
+              options={[{value:"PROFESSIONAL",label:"Profissional"},{value:"RECEPTION",label:"Recepcionista"},{value:"MANAGER",label:"Gerente"},{value:"ADMIN",label:"Administrador"}]} />
             {editingUserId && (
               <Select label="Status" value={userForm.active?"true":"false"} onChange={e => setUserForm({...userForm, active:e.target.value==="true"})}
                 options={[{value:"true",label:"Ativo"},{value:"false",label:"Inativo"}]} />

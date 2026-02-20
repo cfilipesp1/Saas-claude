@@ -70,6 +70,12 @@ CREATE POLICY payments_insert_policy ON payments
   FOR INSERT
   WITH CHECK (clinic_id = public.current_clinic_id());
 
+DROP POLICY IF EXISTS payments_update_policy ON payments;
+CREATE POLICY payments_update_policy ON payments
+  FOR UPDATE
+  USING (clinic_id = public.current_clinic_id())
+  WITH CHECK (clinic_id = public.current_clinic_id());
+
 DROP POLICY IF EXISTS payments_delete_policy ON payments;
 CREATE POLICY payments_delete_policy ON payments
   FOR DELETE
