@@ -7,7 +7,7 @@ import {
   cancelOrthoContract,
   settleReceivable,
 } from "@/actions/financial";
-import { getOrthoReceivables } from "@/queries/financial";
+import { getOrthoReceivables } from "@/actions/financial";
 import {
   Plus,
   X,

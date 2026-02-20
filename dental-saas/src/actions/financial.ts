@@ -419,6 +419,17 @@ export async function deleteCostCenter(id: string): Promise<{ error?: string }> 
 
 // ─── Ortho Contracts ─────────────────────────────────────────
 
+export async function getOrthoReceivables(contractId: string) {
+  const supabase = await createServerSupabase();
+  const { data } = await supabase
+    .from("receivables")
+    .select("*, patient:patients(id, name)")
+    .eq("origin_type", "ortho_contract")
+    .eq("origin_id", contractId)
+    .order("due_date");
+  return data ?? [];
+}
+
 export async function createOrthoContract(formData: FormData): Promise<{ error?: string }> {
   const supabase = await createServerSupabase();
 
