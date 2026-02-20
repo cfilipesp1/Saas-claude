@@ -41,6 +41,13 @@ export async function createPatient(formData: FormData): Promise<{ error?: strin
     return { error: "Nome é obrigatório" };
   }
 
+  // Ensure the user's clinic row exists (self-healing if signup trigger failed)
+  const { error: clinicError } = await supabase.rpc("ensure_clinic_exists");
+  if (clinicError) {
+    console.error("ensure_clinic_exists error:", clinicError);
+    return { error: "Clínica não encontrada. Tente fazer logout e login novamente." };
+  }
+
   const birthDate = (formData.get("birth_date") as string) || null;
 
   const { error } = await supabase.from("patients").insert({
