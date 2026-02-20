@@ -1897,7 +1897,7 @@
               )}
               {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION" || currentUser.role === "MANAGER") && (
                 <button onClick={() => setView("budgets")} style={{ background: view==="budgets"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>
-                  📋 Orçamentos
+                  📋 Funil de Orçamentos
                 </button>
               )}
               {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION" || currentUser.role === "MANAGER") && (
@@ -2034,8 +2034,11 @@
               <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
                 <button onClick={() => { setAnamnesisForm({...defaultAnamnesis, ...selectedPatient.anamnesis}); setShowAnamnesis(true); setEditingAnamnesis(false); }} style={btnSecondary}>Anamnese</button>
                 <button onClick={() => { docInputRef.current?.click(); }} style={btnSecondary}>Anexar Documento</button>
-                {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && (
-                  <button onClick={() => setShowFinanceiro(true)} style={{...btnSecondary, background:"linear-gradient(135deg,#10B981,#059669)", color:"#fff"}}>💰 Financeiro</button>
+                {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION" || currentUser.role === "MANAGER") && (
+                  <React.Fragment>
+                    <button onClick={() => openBudgetEditor(selectedPatient)} style={{...btnSecondary, background:"linear-gradient(135deg,#3B82F6,#1D4ED8)", color:"#fff"}}>📋 Orçamentos</button>
+                    <button onClick={() => setShowFinanceiro(true)} style={{...btnSecondary, background:"linear-gradient(135deg,#10B981,#059669)", color:"#fff"}}>💰 Financeiro</button>
+                  </React.Fragment>
                 )}
                 <button onClick={() => setShowNewRecord(true)} style={btnPrimary}>+ Novo Atendimento</button>
                 <input ref={docInputRef} type="file" accept="image/*,.pdf,.docx" multiple onChange={handleDocUpload} style={{ display:"none" }} />
@@ -2327,7 +2330,7 @@
           {view === "budgets" && (
             <div style={{ padding:"20px 24px", maxWidth:1100, margin:"0 auto" }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-                <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A" }}>📋 Orçamentos</h2>
+                <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A" }}>📋 Funil de Orçamentos</h2>
               </div>
 
               {(() => {
