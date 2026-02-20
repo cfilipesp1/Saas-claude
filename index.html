@@ -1451,7 +1451,9 @@
           await createOrUpdateBudgetSupabase(patientId, valor);
           
           // Atualizar estado local
-          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, orcamento_total: parseFloat(valor) || 0}} : p));
+          const parsedValor = parseFloat(valor) || 0;
+          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, orcamento_total: parsedValor}} : p));
+          setSelectedPatient(prev => prev ? {...prev, financeiro: {...prev.financeiro, orcamento_total: parsedValor}} : prev);
           addAudit("ATUALIZAR_ORCAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Orçamento: R$ ${parseFloat(valor).toFixed(2)}`);
           setEditingOrcamento(false);
           setTempOrcamento("");
@@ -1487,6 +1489,7 @@
           
           // Atualizar estado local
           setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: [...p.financeiro.pagamentos, novoPagamento]}} : p));
+          setSelectedPatient(prev => prev ? {...prev, financeiro: {...prev.financeiro, pagamentos: [...prev.financeiro.pagamentos, novoPagamento]}} : prev);
           addAudit("ADICIONAR_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Valor: R$ ${novoPagamento.valor.toFixed(2)} - ${novoPagamento.forma_pagamento === "avista" ? "À vista" : "Parcelado"}`);
           setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
         } catch (err) {
@@ -1510,6 +1513,7 @@
           
           // Atualizar estado local
           setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: p.financeiro.pagamentos.filter(pg => pg.id !== pagamentoId)}} : p));
+          setSelectedPatient(prev => prev ? {...prev, financeiro: {...prev.financeiro, pagamentos: prev.financeiro.pagamentos.filter(pg => pg.id !== pagamentoId)}} : prev);
           addAudit("REMOVER_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"","");
         } catch (err) {
           console.error('Erro ao remover pagamento:', err);
