@@ -1402,15 +1402,14 @@
             return;
           }
           
-          // Transformar para formato local
           const novoPagamento = {
             id: data.id,
-            data: data.payment_date,
-            valor: parseFloat(data.amount),
-            forma_pagamento: data.payment_method,
-            observacao: data.notes || '',
-            registrado_por: currentUser.name,
-            registrado_em: data.registered_at
+            data: data.data,
+            valor: parseFloat(data.valor) || 0,
+            forma_pagamento: data.forma_pagamento,
+            observacao: data.observacao || '',
+            registrado_por: data.registrado_por || currentUser.name,
+            registrado_em: data.registrado_em
           };
           
           // Atualizar estado local
@@ -2574,7 +2573,7 @@
                           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start", marginBottom:6 }}>
                             <div style={{ flex:1 }}>
                               <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                                <span style={{ fontSize:18, fontWeight:800, color:"#10B981" }}>R$ {pg.valor.toFixed(2).replace(".", ",")}</span>
+                                <span style={{ fontSize:18, fontWeight:800, color:"#10B981" }}>R$ {(parseFloat(pg.valor) || 0).toFixed(2).replace(".", ",")}</span>
                                 <span style={{ fontSize:11, fontWeight:700, color:pg.forma_pagamento === "avista" ? "#0EA5E9" : "#F59E0B", background:pg.forma_pagamento === "avista" ? "#EFF6FF" : "#FEF3C7", border:`1px solid ${pg.forma_pagamento === "avista" ? "#BFDBFE" : "#FDE68A"}`, borderRadius:6, padding:"2px 8px" }}>
                                   {pg.forma_pagamento === "avista" ? "À Vista" : "Parcelado"}
                                 </span>
@@ -2584,7 +2583,7 @@
                                 {pg.observacao && ` · ${pg.observacao}`}
                               </div>
                               <div style={{ fontSize:11, color:"#94A3B8", marginTop:4 }}>
-                                Registrado por: {pg.registrado_por} em {new Date(pg.registrado_em).toLocaleString("pt-BR")}
+                                Registrado por: {pg.registrado_por || "—"} em {pg.registrado_em ? new Date(pg.registrado_em).toLocaleString("pt-BR") : "—"}
                               </div>
                             </div>
                             <button onClick={() => removePagamento(selectedPatient.id, pg.id)} style={{...btnSecondary, fontSize:11, padding:"4px 8px", background:"#FEE2E2", color:"#DC2626", border:"1px solid #FCA5A5"}}>🗑️</button>
