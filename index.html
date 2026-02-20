@@ -138,6 +138,108 @@
     const WIRE_FORMATS = ["Redondo", "Quadrado"];
     const WIRE_GAUGES = ["012","014","016","018","020","16x16","16x22","17x25","19x25","21x25"];
 
+    // ─── TABELA MESTRE DE PROCEDIMENTOS (importada de procedimentos 2.xlsx) ───
+    const BUDGET_STATUSES = {
+      rascunho: { label: "Rascunho", color: "#94A3B8", bg: "#F1F5F9" },
+      entregue: { label: "Entregue", color: "#0EA5E9", bg: "#EFF6FF" },
+      aprovado: { label: "Aprovado", color: "#10B981", bg: "#F0FDF4" },
+      cancelado: { label: "Cancelado", color: "#EF4444", bg: "#FEF2F2" },
+    };
+
+    const PROCEDURES_TABLE = [
+      { code: "81000065", specialty: "Ortodontia", name: "Instalação de aparelho fixo metálico", base_value: 1500, unit_value: 1500 },
+      { code: "81000073", specialty: "Ortodontia", name: "Instalação de aparelho fixo estético", base_value: 2200, unit_value: 2200 },
+      { code: "81000081", specialty: "Ortodontia", name: "Manutenção de aparelho fixo", base_value: 250, unit_value: 250 },
+      { code: "81000090", specialty: "Ortodontia", name: "Troca de fio ortodôntico", base_value: 150, unit_value: 150 },
+      { code: "81000103", specialty: "Ortodontia", name: "Colagem de braquete", base_value: 80, unit_value: 80 },
+      { code: "81000111", specialty: "Ortodontia", name: "Bandagem", base_value: 100, unit_value: 100 },
+      { code: "81000120", specialty: "Ortodontia", name: "Contenção fixa", base_value: 350, unit_value: 350 },
+      { code: "81000138", specialty: "Ortodontia", name: "Contenção removível", base_value: 400, unit_value: 400 },
+      { code: "81000146", specialty: "Ortodontia", name: "Mini-implante ortodôntico", base_value: 600, unit_value: 600 },
+      { code: "81000154", specialty: "Ortodontia", name: "Documentação ortodôntica", base_value: 350, unit_value: 350 },
+      { code: "81000162", specialty: "Ortodontia", name: "Expansor palatino", base_value: 800, unit_value: 800 },
+      { code: "81000170", specialty: "Ortodontia", name: "Alinhador transparente (por arcada)", base_value: 4500, unit_value: 4500 },
+      { code: "81000189", specialty: "Ortodontia", name: "Remoção de aparelho + contenção", base_value: 500, unit_value: 500 },
+      { code: "41000014", specialty: "Endodontia", name: "Tratamento de canal - unirradicular", base_value: 800, unit_value: 800 },
+      { code: "41000022", specialty: "Endodontia", name: "Tratamento de canal - birradicular", base_value: 1000, unit_value: 1000 },
+      { code: "41000030", specialty: "Endodontia", name: "Tratamento de canal - multirradicular", base_value: 1300, unit_value: 1300 },
+      { code: "41000049", specialty: "Endodontia", name: "Retratamento endodôntico", base_value: 1100, unit_value: 1100 },
+      { code: "41000057", specialty: "Endodontia", name: "Capeamento pulpar direto", base_value: 200, unit_value: 200 },
+      { code: "41000065", specialty: "Endodontia", name: "Capeamento pulpar indireto", base_value: 180, unit_value: 180 },
+      { code: "41000073", specialty: "Endodontia", name: "Pulpotomia", base_value: 250, unit_value: 250 },
+      { code: "41000081", specialty: "Endodontia", name: "Pulpectomia", base_value: 300, unit_value: 300 },
+      { code: "41000090", specialty: "Endodontia", name: "Curativo de demora", base_value: 150, unit_value: 150 },
+      { code: "51000011", specialty: "Periodontia", name: "Raspagem supragengival (por sextante)", base_value: 120, unit_value: 120 },
+      { code: "51000020", specialty: "Periodontia", name: "Raspagem subgengival (por sextante)", base_value: 180, unit_value: 180 },
+      { code: "51000038", specialty: "Periodontia", name: "Profilaxia dental", base_value: 150, unit_value: 150 },
+      { code: "51000046", specialty: "Periodontia", name: "Aplicação de flúor", base_value: 80, unit_value: 80 },
+      { code: "51000054", specialty: "Periodontia", name: "Gengivectomia (por sextante)", base_value: 400, unit_value: 400 },
+      { code: "51000062", specialty: "Periodontia", name: "Gengivoplastia (por sextante)", base_value: 450, unit_value: 450 },
+      { code: "51000070", specialty: "Periodontia", name: "Cirurgia periodontal a retalho", base_value: 700, unit_value: 700 },
+      { code: "51000089", specialty: "Periodontia", name: "Enxerto gengival", base_value: 900, unit_value: 900 },
+      { code: "51000097", specialty: "Periodontia", name: "Frenectomia", base_value: 400, unit_value: 400 },
+      { code: "61000018", specialty: "Prótese", name: "Prótese total superior", base_value: 1800, unit_value: 1800 },
+      { code: "61000026", specialty: "Prótese", name: "Prótese total inferior", base_value: 1800, unit_value: 1800 },
+      { code: "61000034", specialty: "Prótese", name: "Prótese parcial removível", base_value: 1200, unit_value: 1200 },
+      { code: "61000042", specialty: "Prótese", name: "Coroa provisória", base_value: 250, unit_value: 250 },
+      { code: "61000050", specialty: "Prótese", name: "Coroa definitiva - metalocerâmica", base_value: 1500, unit_value: 1500 },
+      { code: "61000069", specialty: "Prótese", name: "Coroa definitiva - porcelana pura", base_value: 2200, unit_value: 2200 },
+      { code: "61000077", specialty: "Prótese", name: "Faceta de porcelana", base_value: 2000, unit_value: 2000 },
+      { code: "61000085", specialty: "Prótese", name: "Faceta de resina", base_value: 800, unit_value: 800 },
+      { code: "61000093", specialty: "Prótese", name: "Prótese sobre implante", base_value: 3500, unit_value: 3500 },
+      { code: "61000107", specialty: "Prótese", name: "Reembasamento de prótese", base_value: 400, unit_value: 400 },
+      { code: "61000115", specialty: "Prótese", name: "Conserto de prótese", base_value: 250, unit_value: 250 },
+      { code: "71000015", specialty: "Implantodontia", name: "Instalação de implante dentário", base_value: 3000, unit_value: 3000 },
+      { code: "71000023", specialty: "Implantodontia", name: "Reabertura de implante", base_value: 500, unit_value: 500 },
+      { code: "71000031", specialty: "Implantodontia", name: "Instalação de cicatrizador", base_value: 300, unit_value: 300 },
+      { code: "71000040", specialty: "Implantodontia", name: "Carga imediata", base_value: 4000, unit_value: 4000 },
+      { code: "71000058", specialty: "Implantodontia", name: "Enxerto ósseo", base_value: 1800, unit_value: 1800 },
+      { code: "71000066", specialty: "Implantodontia", name: "Levantamento de seio maxilar", base_value: 2500, unit_value: 2500 },
+      { code: "71000074", specialty: "Implantodontia", name: "Regeneração óssea guiada", base_value: 2000, unit_value: 2000 },
+      { code: "21000017", specialty: "Dentística", name: "Restauração resina composta - simples", base_value: 200, unit_value: 200 },
+      { code: "21000025", specialty: "Dentística", name: "Restauração resina composta - composta", base_value: 300, unit_value: 300 },
+      { code: "21000033", specialty: "Dentística", name: "Restauração resina composta - complexa", base_value: 450, unit_value: 450 },
+      { code: "21000041", specialty: "Dentística", name: "Clareamento caseiro (kit completo)", base_value: 600, unit_value: 600 },
+      { code: "21000050", specialty: "Dentística", name: "Clareamento de consultório", base_value: 900, unit_value: 900 },
+      { code: "21000068", specialty: "Dentística", name: "Clareamento interno (dente desvitalizado)", base_value: 350, unit_value: 350 },
+      { code: "21000076", specialty: "Dentística", name: "Faceta direta em resina", base_value: 700, unit_value: 700 },
+      { code: "21000084", specialty: "Dentística", name: "Ajuste oclusal", base_value: 120, unit_value: 120 },
+      { code: "21000092", specialty: "Dentística", name: "Polimento de restauração", base_value: 80, unit_value: 80 },
+      { code: "31000014", specialty: "Cirurgia", name: "Exodontia simples", base_value: 200, unit_value: 200 },
+      { code: "31000022", specialty: "Cirurgia", name: "Exodontia de terceiro molar incluso", base_value: 600, unit_value: 600 },
+      { code: "31000030", specialty: "Cirurgia", name: "Exodontia de raiz residual", base_value: 250, unit_value: 250 },
+      { code: "31000049", specialty: "Cirurgia", name: "Cirurgia de dente incluso", base_value: 800, unit_value: 800 },
+      { code: "31000057", specialty: "Cirurgia", name: "Apicectomia", base_value: 700, unit_value: 700 },
+      { code: "31000065", specialty: "Cirurgia", name: "Biópsia de tecido bucal", base_value: 400, unit_value: 400 },
+      { code: "31000073", specialty: "Cirurgia", name: "Remoção de cisto", base_value: 900, unit_value: 900 },
+      { code: "31000081", specialty: "Cirurgia", name: "Frenectomia lingual", base_value: 400, unit_value: 400 },
+      { code: "31000090", specialty: "Cirurgia", name: "Frenectomia labial", base_value: 400, unit_value: 400 },
+      { code: "91000012", specialty: "Odontopediatria", name: "Aplicação de selante (por dente)", base_value: 100, unit_value: 100 },
+      { code: "91000020", specialty: "Odontopediatria", name: "Aplicação de flúor infantil", base_value: 80, unit_value: 80 },
+      { code: "91000039", specialty: "Odontopediatria", name: "Restauração em dente decíduo", base_value: 180, unit_value: 180 },
+      { code: "91000047", specialty: "Odontopediatria", name: "Pulpotomia em dente decíduo", base_value: 250, unit_value: 250 },
+      { code: "91000055", specialty: "Odontopediatria", name: "Pulpectomia em dente decíduo", base_value: 300, unit_value: 300 },
+      { code: "91000063", specialty: "Odontopediatria", name: "Exodontia de dente decíduo", base_value: 120, unit_value: 120 },
+      { code: "91000071", specialty: "Odontopediatria", name: "Mantenedor de espaço", base_value: 500, unit_value: 500 },
+      { code: "91000080", specialty: "Odontopediatria", name: "Coroa de aço", base_value: 350, unit_value: 350 },
+      { code: "11000010", specialty: "Diagnóstico", name: "Consulta odontológica inicial", base_value: 150, unit_value: 150 },
+      { code: "11000029", specialty: "Diagnóstico", name: "Radiografia periapical", base_value: 50, unit_value: 50 },
+      { code: "11000037", specialty: "Diagnóstico", name: "Radiografia panorâmica", base_value: 120, unit_value: 120 },
+      { code: "11000045", specialty: "Diagnóstico", name: "Tomografia computadorizada (cone beam)", base_value: 350, unit_value: 350 },
+      { code: "11000053", specialty: "Diagnóstico", name: "Moldagem de estudo", base_value: 100, unit_value: 100 },
+      { code: "11000061", specialty: "Diagnóstico", name: "Plano de tratamento", base_value: 200, unit_value: 200 },
+      { code: "11000070", specialty: "Urgência", name: "Atendimento de urgência/emergência", base_value: 200, unit_value: 200 },
+      { code: "11000088", specialty: "Urgência", name: "Cimentação provisória de emergência", base_value: 100, unit_value: 100 },
+      { code: "11000096", specialty: "Urgência", name: "Drenagem de abscesso", base_value: 250, unit_value: 250 },
+      { code: "11000100", specialty: "Urgência", name: "Curativo de urgência", base_value: 120, unit_value: 120 },
+      { code: "99000019", specialty: "Estética", name: "Lente de contato dental (por dente)", base_value: 2500, unit_value: 2500 },
+      { code: "99000027", specialty: "Estética", name: "Toxina botulínica (aplicação)", base_value: 1200, unit_value: 1200 },
+      { code: "99000035", specialty: "Estética", name: "Preenchimento labial (ácido hialurônico)", base_value: 1500, unit_value: 1500 },
+      { code: "99000043", specialty: "Estética", name: "Bichectomia", base_value: 2000, unit_value: 2000 },
+      { code: "99000051", specialty: "DTM/Dor Orofacial", name: "Placa miorrelaxante", base_value: 800, unit_value: 800 },
+      { code: "99000060", specialty: "DTM/Dor Orofacial", name: "Ajuste de placa oclusal", base_value: 150, unit_value: 150 },
+    ];
+
     // ─── SUPABASE CONFIGURATION ──────────────────────────────────────────
     const SUPABASE_URL = 'https://bzixxdtbktsztdtpadwh.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6aXh4ZHRia3RzenRkdHBhZHdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDcwNjEsImV4cCI6MjA4NzAyMzA2MX0.DqgAyHB_QPzkz21RFXYf-fN1IzxyxoX4mMzqr3KMIww';
@@ -474,6 +576,16 @@
       const [financeiroForm, setFinanceiroForm] = useState({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
       const [editingOrcamento, setEditingOrcamento] = useState(false);
       const [tempOrcamento, setTempOrcamento] = useState("");
+      // ── Orçamentos ──
+      const [showOrcamentos, setShowOrcamentos] = useState(false);
+      const [orcamentoView, setOrcamentoView] = useState("list"); // list | form | print
+      const [editingBudget, setEditingBudget] = useState(null);
+      const [budgetForm, setBudgetForm] = useState({ budget_date: formatDateISO(new Date()), professional_id: "", notes: "", status: "rascunho", discount_total: 0, items: [] });
+      const [procSearch, setProcSearch] = useState("");
+      const [procSearchResults, setProcSearchResults] = useState([]);
+      const [printingBudget, setPrintingBudget] = useState(null);
+      const [budgetListKey, setBudgetListKey] = useState(0);
+
       const [showRelatorio, setShowRelatorio] = useState(false);
       const [relatorioFilters, setRelatorioFilters] = useState({ profissional_id: "", data_inicio: formatDateISO(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), data_fim: formatDateISO(new Date()), busca: "" });
       const [relatorioSort, setRelatorioSort] = useState({ field: "date", direction: "desc" });
@@ -734,7 +846,7 @@
       };
       
       const removeLocalData = (patientId) => {
-        ['anamnesis', 'records', 'documents', 'responsavelHistory', 'arrivalControl', 'financeiro'].forEach(type => {
+        ['anamnesis', 'records', 'documents', 'responsavelHistory', 'arrivalControl', 'financeiro', 'budgets'].forEach(type => {
           try {
             localStorage.removeItem(`patient_${type}_${patientId}`);
           } catch {}
@@ -883,6 +995,163 @@
         }
       };
       
+      // ── CRUD Orçamentos (budgets) — localStorage ──
+      const loadBudgets = (patientId) => {
+        return getLocalData('budgets', patientId) || [];
+      };
+
+      const saveBudget = (patientId, budget) => {
+        const budgets = loadBudgets(patientId);
+        const existingIdx = budgets.findIndex(b => b.id === budget.id);
+        if (existingIdx >= 0) {
+          budgets[existingIdx] = { ...budget, updated_at: new Date().toISOString() };
+        } else {
+          budgets.unshift({ ...budget, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+        }
+        saveLocalData('budgets', patientId, budgets);
+        return budget;
+      };
+
+      const deleteBudget = (patientId, budgetId) => {
+        const budgets = loadBudgets(patientId);
+        const filtered = budgets.filter(b => b.id !== budgetId);
+        saveLocalData('budgets', patientId, filtered);
+      };
+
+      const duplicateBudget = (patientId, budgetId) => {
+        const budgets = loadBudgets(patientId);
+        const original = budgets.find(b => b.id === budgetId);
+        if (!original) return null;
+        const newBudget = {
+          ...original,
+          id: generateId(),
+          status: "rascunho",
+          budget_date: formatDateISO(new Date()),
+          notes: (original.notes || "") + " (Cópia)",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        budgets.unshift(newBudget);
+        saveLocalData('budgets', patientId, budgets);
+        return newBudget;
+      };
+
+      const searchProcedures = (query) => {
+        if (!query || query.length < 2) return [];
+        const q = query.toLowerCase();
+        return PROCEDURES_TABLE.filter(p =>
+          p.name.toLowerCase().includes(q) ||
+          p.code.toLowerCase().includes(q) ||
+          p.specialty.toLowerCase().includes(q)
+        ).slice(0, 15);
+      };
+
+      const initBudgetForm = (budget) => {
+        if (budget) {
+          setBudgetForm({
+            budget_date: budget.budget_date || formatDateISO(new Date()),
+            professional_id: budget.professional_id || "",
+            notes: budget.notes || "",
+            status: budget.status || "rascunho",
+            discount_total: budget.discount_total || 0,
+            items: budget.items || [],
+          });
+          setEditingBudget(budget);
+        } else {
+          setBudgetForm({
+            budget_date: formatDateISO(new Date()),
+            professional_id: "",
+            notes: "",
+            status: "rascunho",
+            discount_total: 0,
+            items: [],
+          });
+          setEditingBudget(null);
+        }
+        setProcSearch("");
+        setProcSearchResults([]);
+      };
+
+      const addBudgetItem = (proc) => {
+        const newItem = {
+          id: generateId(),
+          procedure_id: proc.code,
+          procedure_code: proc.code,
+          procedure_name: proc.name,
+          specialty: proc.specialty,
+          dente_ou_regiao: "",
+          qty: 1,
+          unit_price: proc.unit_value || 0,
+          line_discount: 0,
+          line_total: proc.unit_value || 0,
+        };
+        setBudgetForm(prev => ({ ...prev, items: [...prev.items, newItem] }));
+        setProcSearch("");
+        setProcSearchResults([]);
+      };
+
+      const updateBudgetItem = (itemId, field, value) => {
+        setBudgetForm(prev => {
+          const items = prev.items.map(item => {
+            if (item.id !== itemId) return item;
+            const updated = { ...item, [field]: value };
+            if (field === "qty" || field === "unit_price" || field === "line_discount") {
+              const qty = parseFloat(field === "qty" ? value : updated.qty) || 0;
+              const price = parseFloat(field === "unit_price" ? value : updated.unit_price) || 0;
+              const disc = parseFloat(field === "line_discount" ? value : updated.line_discount) || 0;
+              updated.line_total = Math.max(0, (qty * price) - disc);
+            }
+            return updated;
+          });
+          return { ...prev, items };
+        });
+      };
+
+      const removeBudgetItem = (itemId) => {
+        setBudgetForm(prev => ({ ...prev, items: prev.items.filter(i => i.id !== itemId) }));
+      };
+
+      const calcBudgetSubtotal = (items) => items.reduce((sum, i) => sum + (parseFloat(i.line_total) || 0), 0);
+
+      const handleSaveBudget = (patientId) => {
+        // Validação
+        const invalidItems = budgetForm.items.filter(i => !i.dente_ou_regiao || !i.dente_ou_regiao.trim());
+        if (invalidItems.length > 0) {
+          alert("Preencha o campo 'Dente/Região' de todos os itens antes de salvar.");
+          return false;
+        }
+        if (budgetForm.items.some(i => (parseFloat(i.qty) || 0) <= 0)) {
+          alert("Quantidade deve ser maior que zero em todos os itens.");
+          return false;
+        }
+        if (!budgetForm.professional_id) {
+          alert("Selecione o profissional responsável.");
+          return false;
+        }
+
+        const subtotal = calcBudgetSubtotal(budgetForm.items);
+        const discountTotal = parseFloat(budgetForm.discount_total) || 0;
+        const total = Math.max(0, subtotal - discountTotal);
+
+        const budget = {
+          id: editingBudget?.id || generateId(),
+          patient_id: patientId,
+          budget_date: budgetForm.budget_date,
+          professional_id: budgetForm.professional_id,
+          professional_name: users.find(u => u.id === budgetForm.professional_id)?.name || "",
+          notes: budgetForm.notes,
+          status: budgetForm.status,
+          items: budgetForm.items,
+          subtotal,
+          discount_total: discountTotal,
+          total,
+        };
+
+        saveBudget(patientId, budget);
+        addAudit(editingBudget ? "EDITAR_ORCAMENTO" : "CRIAR_ORCAMENTO", "paciente", patientId, selectedPatient?.name || "", `Orçamento R$ ${total.toFixed(2)} - ${budget.items.length} item(ns)`);
+        return true;
+      };
+
       // ── Realtime & Notificações ──
       const showNotification = (message, type = 'info') => {
         const id = Date.now();
@@ -1908,6 +2177,7 @@
               {/* Action buttons */}
               <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
                 <button onClick={() => { setAnamnesisForm({...defaultAnamnesis, ...selectedPatient.anamnesis}); setShowAnamnesis(true); setEditingAnamnesis(false); }} style={btnSecondary}>Anamnese</button>
+                <button onClick={() => { setOrcamentoView("list"); setShowOrcamentos(true); }} style={{...btnSecondary, background:"linear-gradient(135deg,#8B5CF6,#7C3AED)", color:"#fff"}}>📋 Orçamento</button>
                 <button onClick={() => { docInputRef.current?.click(); }} style={btnSecondary}>Anexar Documento</button>
                 {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && (
                   <button onClick={() => setShowFinanceiro(true)} style={{...btnSecondary, background:"linear-gradient(135deg,#10B981,#059669)", color:"#fff"}}>💰 Financeiro</button>
@@ -2584,6 +2854,304 @@
                 </div>
               </div>
             )}
+          </Modal>
+
+          {/* ═══ ORÇAMENTOS MODAL ═══ */}
+          <Modal isOpen={showOrcamentos} onClose={() => { setShowOrcamentos(false); setOrcamentoView("list"); setEditingBudget(null); setPrintingBudget(null); }} title={orcamentoView === "list" ? "📋 Orçamentos do Paciente" : orcamentoView === "form" ? (editingBudget ? "✏️ Editar Orçamento" : "📋 Novo Orçamento") : "🖨️ Imprimir Orçamento"} wide>
+            {selectedPatient && orcamentoView === "list" && (() => {
+              void budgetListKey; // trigger re-render on budget list changes
+              const budgets = loadBudgets(selectedPatient.id);
+              return (
+                <div>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+                    <div style={{ fontSize:14, color:"#64748B" }}>{budgets.length} orçamento(s) registrado(s)</div>
+                    <button onClick={() => { initBudgetForm(null); setOrcamentoView("form"); }} style={btnPrimary}>+ Novo Orçamento</button>
+                  </div>
+                  {budgets.length === 0 ? (
+                    <div style={{ textAlign:"center", padding:60, color:"#94A3B8" }}>
+                      <div style={{ fontSize:48, marginBottom:12 }}>📋</div>
+                      <div style={{ fontSize:16, fontWeight:600 }}>Nenhum orçamento cadastrado</div>
+                      <div style={{ fontSize:13, marginTop:4 }}>Clique em "+ Novo Orçamento" para começar</div>
+                    </div>
+                  ) : (
+                    <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                      {[...budgets].sort((a, b) => new Date(b.budget_date) - new Date(a.budget_date)).map(b => {
+                        const st = BUDGET_STATUSES[b.status] || BUDGET_STATUSES.rascunho;
+                        return (
+                          <div key={b.id} style={{ ...cardStyle, marginBottom:0, border:`1.5px solid ${st.color}30` }}>
+                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start", gap:12, flexWrap:"wrap" }}>
+                              <div style={{ flex:1, minWidth:200 }}>
+                                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
+                                  <span style={{ fontSize:20, fontWeight:800, color:"#0F172A" }}>R$ {(b.total || 0).toFixed(2).replace(".", ",")}</span>
+                                  <span style={{ fontSize:11, fontWeight:700, color:st.color, background:st.bg, border:`1px solid ${st.color}40`, borderRadius:6, padding:"2px 10px" }}>{st.label}</span>
+                                </div>
+                                <div style={{ fontSize:12, color:"#64748B", marginBottom:2 }}>
+                                  📅 {formatDate(b.budget_date)} · 👨‍⚕️ {b.professional_name || "—"} · {(b.items || []).length} item(ns)
+                                </div>
+                                {b.notes && <div style={{ fontSize:11, color:"#94A3B8", fontStyle:"italic" }}>{b.notes}</div>}
+                              </div>
+                              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                                <button onClick={() => { setPrintingBudget(b); setOrcamentoView("print"); }} style={{...btnSecondary, fontSize:11, padding:"6px 10px"}} title="Imprimir">🖨️</button>
+                                <button onClick={() => { initBudgetForm(b); setOrcamentoView("form"); }} style={{...btnSecondary, fontSize:11, padding:"6px 10px"}} title="Editar">✏️</button>
+                                <button onClick={() => {
+                                  const dup = duplicateBudget(selectedPatient.id, b.id);
+                                  if (dup) { addAudit("DUPLICAR_ORCAMENTO","paciente",selectedPatient.id,selectedPatient.name,"Orçamento duplicado"); setBudgetListKey(k => k+1); }
+                                }} style={{...btnSecondary, fontSize:11, padding:"6px 10px"}} title="Duplicar">📄</button>
+                                <button onClick={() => {
+                                  if (confirm("Excluir este orçamento permanentemente?")) {
+                                    deleteBudget(selectedPatient.id, b.id);
+                                    addAudit("EXCLUIR_ORCAMENTO","paciente",selectedPatient.id,selectedPatient.name,`Orçamento R$ ${(b.total||0).toFixed(2)} excluído`);
+                                    setBudgetListKey(k => k+1);
+                                  }
+                                }} style={{...btnSecondary, fontSize:11, padding:"6px 10px", background:"#FEE2E2", color:"#DC2626", border:"1px solid #FCA5A5"}} title="Excluir">🗑️</button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {selectedPatient && orcamentoView === "form" && (
+              <div>
+                <button onClick={() => { setOrcamentoView("list"); setEditingBudget(null); }} style={{...btnSecondary, fontSize:12, padding:"6px 14px", marginBottom:16}}>← Voltar à lista</button>
+
+                {/* Cabeçalho do orçamento */}
+                <div style={{ ...cardStyle, background:"linear-gradient(135deg,#F5F3FF,#EDE9FE)", borderColor:"#8B5CF6" }}>
+                  <div style={{ fontSize:16, fontWeight:700, color:"#6D28D9", marginBottom:12 }}>Dados do Orçamento</div>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:12 }}>
+                    <Input label="Data do Orçamento *" type="date" value={budgetForm.budget_date} onChange={e => setBudgetForm(prev => ({...prev, budget_date: e.target.value}))} />
+                    <Select label="Profissional Responsável *" value={budgetForm.professional_id} onChange={e => setBudgetForm(prev => ({...prev, professional_id: e.target.value}))}
+                      options={[{value:"", label:"Selecione..."}, ...users.filter(u => u.active !== false).map(u => ({value:u.id, label:u.name}))]} />
+                    <Select label="Status" value={budgetForm.status} onChange={e => setBudgetForm(prev => ({...prev, status: e.target.value}))}
+                      options={Object.entries(BUDGET_STATUSES).map(([k, v]) => ({value:k, label:v.label}))} />
+                  </div>
+                  <Input label="Observações" value={budgetForm.notes} onChange={e => setBudgetForm(prev => ({...prev, notes: e.target.value}))} placeholder="Observações gerais do orçamento..." />
+                </div>
+
+                {/* Adicionar procedimento */}
+                <div style={{ ...cardStyle }}>
+                  <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12 }}>Adicionar Procedimentos</div>
+                  <div style={{ position:"relative" }}>
+                    <input
+                      value={procSearch}
+                      onChange={e => { setProcSearch(e.target.value); setProcSearchResults(searchProcedures(e.target.value)); }}
+                      placeholder="Buscar por nome, código ou especialidade..."
+                      style={{ width:"100%", padding:"10px 14px", borderRadius:10, border:"1.5px solid #CBD5E1", fontSize:14, outline:"none", background:"#F8FAFC", boxSizing:"border-box" }}
+                    />
+                    {procSearchResults.length > 0 && (
+                      <div style={{ position:"absolute", top:"100%", left:0, right:0, zIndex:10, background:"#fff", border:"1px solid #E2E8F0", borderRadius:10, boxShadow:"0 8px 24px rgba(0,0,0,0.12)", maxHeight:250, overflowY:"auto", marginTop:4 }}>
+                        {procSearchResults.map(proc => (
+                          <div key={proc.code} onClick={() => addBudgetItem(proc)}
+                            style={{ padding:"10px 14px", cursor:"pointer", borderBottom:"1px solid #F1F5F9", display:"flex", justifyContent:"space-between", alignItems:"center" }}
+                            onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"}
+                            onMouseLeave={e => e.currentTarget.style.background="#fff"}>
+                            <div>
+                              <div style={{ fontSize:13, fontWeight:600, color:"#0F172A" }}>{proc.name}</div>
+                              <div style={{ fontSize:11, color:"#94A3B8" }}>{proc.code} · {proc.specialty}</div>
+                            </div>
+                            <div style={{ fontSize:13, fontWeight:700, color:"#10B981", whiteSpace:"nowrap" }}>R$ {(proc.unit_value || 0).toFixed(2).replace(".",",")}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Itens do orçamento */}
+                {budgetForm.items.length > 0 && (
+                  <div style={{ ...cardStyle }}>
+                    <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12 }}>Itens do Orçamento ({budgetForm.items.length})</div>
+                    <div style={{ overflowX:"auto" }}>
+                      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                        <thead>
+                          <tr style={{ background:"#F8FAFC" }}>
+                            <th style={{ padding:"8px 10px", textAlign:"left", fontWeight:700, color:"#475569", borderBottom:"2px solid #E2E8F0", minWidth:180 }}>Procedimento</th>
+                            <th style={{ padding:"8px 10px", textAlign:"left", fontWeight:700, color:"#475569", borderBottom:"2px solid #E2E8F0", minWidth:140 }}>Dente/Região *</th>
+                            <th style={{ padding:"8px 10px", textAlign:"center", fontWeight:700, color:"#475569", borderBottom:"2px solid #E2E8F0", width:60 }}>Qtd</th>
+                            <th style={{ padding:"8px 10px", textAlign:"right", fontWeight:700, color:"#475569", borderBottom:"2px solid #E2E8F0", width:100 }}>Vlr Unit.</th>
+                            <th style={{ padding:"8px 10px", textAlign:"right", fontWeight:700, color:"#475569", borderBottom:"2px solid #E2E8F0", width:90 }}>Desc.</th>
+                            <th style={{ padding:"8px 10px", textAlign:"right", fontWeight:700, color:"#475569", borderBottom:"2px solid #E2E8F0", width:100 }}>Total</th>
+                            <th style={{ padding:"8px 10px", textAlign:"center", fontWeight:700, color:"#475569", borderBottom:"2px solid #E2E8F0", width:40 }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {budgetForm.items.map(item => (
+                            <tr key={item.id} style={{ borderBottom:"1px solid #F1F5F9" }}>
+                              <td style={{ padding:"8px 10px" }}>
+                                <div style={{ fontWeight:600, color:"#0F172A" }}>{item.procedure_name}</div>
+                                <div style={{ fontSize:10, color:"#94A3B8" }}>{item.procedure_code} · {item.specialty}</div>
+                              </td>
+                              <td style={{ padding:"8px 10px" }}>
+                                <input value={item.dente_ou_regiao} onChange={e => updateBudgetItem(item.id, "dente_ou_regiao", e.target.value)}
+                                  placeholder="Ex: 11, Arcada sup..."
+                                  style={{ width:"100%", padding:"6px 8px", borderRadius:6, border: !item.dente_ou_regiao.trim() ? "2px solid #EF4444" : "1px solid #CBD5E1", fontSize:12, outline:"none", background: !item.dente_ou_regiao.trim() ? "#FEF2F2" : "#F8FAFC", boxSizing:"border-box" }} />
+                              </td>
+                              <td style={{ padding:"8px 10px", textAlign:"center" }}>
+                                <input type="number" min="1" value={item.qty} onChange={e => updateBudgetItem(item.id, "qty", e.target.value)}
+                                  style={{ width:50, padding:"6px 4px", borderRadius:6, border:"1px solid #CBD5E1", fontSize:12, outline:"none", textAlign:"center", background:"#F8FAFC" }} />
+                              </td>
+                              <td style={{ padding:"8px 10px", textAlign:"right" }}>
+                                <input type="number" step="0.01" value={item.unit_price} onChange={e => updateBudgetItem(item.id, "unit_price", e.target.value)}
+                                  style={{ width:85, padding:"6px 4px", borderRadius:6, border:"1px solid #CBD5E1", fontSize:12, outline:"none", textAlign:"right", background:"#F8FAFC" }} />
+                              </td>
+                              <td style={{ padding:"8px 10px", textAlign:"right" }}>
+                                <input type="number" step="0.01" value={item.line_discount} onChange={e => updateBudgetItem(item.id, "line_discount", e.target.value)}
+                                  style={{ width:75, padding:"6px 4px", borderRadius:6, border:"1px solid #CBD5E1", fontSize:12, outline:"none", textAlign:"right", background:"#F8FAFC" }} />
+                              </td>
+                              <td style={{ padding:"8px 10px", textAlign:"right", fontWeight:700, color:"#10B981" }}>
+                                R$ {(parseFloat(item.line_total) || 0).toFixed(2).replace(".",",")}
+                              </td>
+                              <td style={{ padding:"8px 10px", textAlign:"center" }}>
+                                <button onClick={() => removeBudgetItem(item.id)}
+                                  style={{ background:"#FEE2E2", border:"1px solid #FCA5A5", borderRadius:6, color:"#DC2626", cursor:"pointer", fontSize:12, padding:"4px 6px" }}>×</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Totais */}
+                {budgetForm.items.length > 0 && (() => {
+                  const subtotal = calcBudgetSubtotal(budgetForm.items);
+                  const discountTotal = parseFloat(budgetForm.discount_total) || 0;
+                  const total = Math.max(0, subtotal - discountTotal);
+                  return (
+                    <div style={{ ...cardStyle, background:"linear-gradient(135deg,#F0FDF4,#DCFCE7)", borderColor:"#10B981" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                        <span style={{ fontSize:14, fontWeight:600, color:"#475569" }}>Subtotal:</span>
+                        <span style={{ fontSize:16, fontWeight:700, color:"#0F172A" }}>R$ {subtotal.toFixed(2).replace(".",",")}</span>
+                      </div>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8, gap:12 }}>
+                        <span style={{ fontSize:14, fontWeight:600, color:"#475569" }}>Desconto geral (R$):</span>
+                        <input type="number" step="0.01" value={budgetForm.discount_total}
+                          onChange={e => setBudgetForm(prev => ({...prev, discount_total: e.target.value}))}
+                          style={{ width:120, padding:"6px 10px", borderRadius:8, border:"1px solid #CBD5E1", fontSize:14, outline:"none", textAlign:"right", background:"#fff" }} />
+                      </div>
+                      <div style={{ borderTop:"2px solid #10B981", paddingTop:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                        <span style={{ fontSize:18, fontWeight:800, color:"#059669" }}>TOTAL:</span>
+                        <span style={{ fontSize:24, fontWeight:800, color:"#059669" }}>R$ {total.toFixed(2).replace(".",",")}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Botões de ação */}
+                <div style={{ display:"flex", justifyContent:"flex-end", gap:10, marginTop:8 }}>
+                  <button onClick={() => { setOrcamentoView("list"); setEditingBudget(null); }} style={btnSecondary}>Cancelar</button>
+                  <button onClick={() => {
+                    if (handleSaveBudget(selectedPatient.id)) {
+                      setBudgetListKey(k => k+1);
+                      setOrcamentoView("list");
+                      setEditingBudget(null);
+                    }
+                  }} style={btnPrimary}>{editingBudget ? "✓ Salvar Alterações" : "✓ Salvar Orçamento"}</button>
+                </div>
+              </div>
+            )}
+
+            {selectedPatient && orcamentoView === "print" && printingBudget && (() => {
+              const b = printingBudget;
+              const st = BUDGET_STATUSES[b.status] || BUDGET_STATUSES.rascunho;
+              return (
+                <div>
+                  <div style={{ display:"flex", gap:10, marginBottom:16 }}>
+                    <button onClick={() => { setOrcamentoView("list"); setPrintingBudget(null); }} style={{...btnSecondary, fontSize:12, padding:"6px 14px"}}>← Voltar</button>
+                    <button onClick={() => {
+                      const printContent = document.getElementById("budget-print-area");
+                      if (!printContent) return;
+                      const w = window.open("", "_blank", "width=800,height=600");
+                      w.document.write(`<!DOCTYPE html><html><head><title>Orçamento - ${selectedPatient.name}</title>
+                        <style>
+                          body { font-family: 'Segoe UI', Arial, sans-serif; margin: 30px; color: #333; }
+                          h1 { font-size: 22px; margin-bottom: 4px; }
+                          h2 { font-size: 16px; color: #666; margin-bottom: 20px; font-weight: normal; }
+                          .info { margin-bottom: 20px; font-size: 14px; line-height: 1.8; }
+                          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                          th { background: #f5f5f5; padding: 10px 8px; text-align: left; font-size: 12px; border-bottom: 2px solid #ddd; }
+                          td { padding: 8px; border-bottom: 1px solid #eee; font-size: 13px; }
+                          .total-row { font-size: 18px; font-weight: bold; text-align: right; padding: 16px 0; border-top: 2px solid #333; }
+                          .footer { margin-top: 60px; text-align: center; font-size: 11px; color: #999; }
+                          .sign-line { margin-top: 80px; border-top: 1px solid #333; width: 250px; text-align: center; padding-top: 8px; font-size: 12px; }
+                          @media print { body { margin: 15px; } }
+                        </style>
+                      </head><body>`);
+                      w.document.write(printContent.innerHTML);
+                      w.document.write(`</body></html>`);
+                      w.document.close();
+                      w.focus();
+                      setTimeout(() => w.print(), 300);
+                    }} style={{...btnPrimary, fontSize:12, padding:"6px 14px"}}>🖨️ Imprimir / PDF</button>
+                  </div>
+
+                  <div id="budget-print-area" style={{ background:"#fff", padding:24, border:"1px solid #E2E8F0", borderRadius:12 }}>
+                    <h1 style={{ fontSize:22, fontWeight:800, color:"#0F172A", marginBottom:4 }}>O+ Fichas — Orçamento Odontológico</h1>
+                    <h2 style={{ fontSize:14, color:"#64748B", fontWeight:400, marginBottom:20 }}>Orçamento #{b.id?.slice(-6).toUpperCase()}</h2>
+
+                    <div style={{ fontSize:14, lineHeight:"1.8", marginBottom:20 }}>
+                      <div><strong>Paciente:</strong> {selectedPatient.name}</div>
+                      <div><strong>Data:</strong> {formatDate(b.budget_date)}</div>
+                      <div><strong>Profissional:</strong> {b.professional_name || "—"}</div>
+                      <div><strong>Status:</strong> {st.label}</div>
+                      {b.notes && <div><strong>Obs:</strong> {b.notes}</div>}
+                    </div>
+
+                    <table style={{ width:"100%", borderCollapse:"collapse", margin:"20px 0" }}>
+                      <thead>
+                        <tr style={{ background:"#F8FAFC" }}>
+                          <th style={{ padding:"10px 8px", textAlign:"left", fontSize:12, fontWeight:700, borderBottom:"2px solid #E2E8F0" }}>Procedimento</th>
+                          <th style={{ padding:"10px 8px", textAlign:"left", fontSize:12, fontWeight:700, borderBottom:"2px solid #E2E8F0" }}>Dente/Região</th>
+                          <th style={{ padding:"10px 8px", textAlign:"center", fontSize:12, fontWeight:700, borderBottom:"2px solid #E2E8F0" }}>Qtd</th>
+                          <th style={{ padding:"10px 8px", textAlign:"right", fontSize:12, fontWeight:700, borderBottom:"2px solid #E2E8F0" }}>Vlr Unit.</th>
+                          <th style={{ padding:"10px 8px", textAlign:"right", fontSize:12, fontWeight:700, borderBottom:"2px solid #E2E8F0" }}>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(b.items || []).map((item, idx) => (
+                          <tr key={idx} style={{ borderBottom:"1px solid #F1F5F9" }}>
+                            <td style={{ padding:"8px", fontSize:13 }}>
+                              <div style={{ fontWeight:600 }}>{item.procedure_name}</div>
+                              <div style={{ fontSize:10, color:"#94A3B8" }}>{item.procedure_code} · {item.specialty}</div>
+                            </td>
+                            <td style={{ padding:"8px", fontSize:13 }}>{item.dente_ou_regiao}</td>
+                            <td style={{ padding:"8px", fontSize:13, textAlign:"center" }}>{item.qty}</td>
+                            <td style={{ padding:"8px", fontSize:13, textAlign:"right" }}>R$ {(parseFloat(item.unit_price)||0).toFixed(2).replace(".",",")}</td>
+                            <td style={{ padding:"8px", fontSize:13, textAlign:"right", fontWeight:600 }}>R$ {(parseFloat(item.line_total)||0).toFixed(2).replace(".",",")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    <div style={{ textAlign:"right", marginTop:16, fontSize:14, lineHeight:"1.8" }}>
+                      <div>Subtotal: <strong>R$ {(b.subtotal || 0).toFixed(2).replace(".",",")}</strong></div>
+                      {(b.discount_total || 0) > 0 && <div>Desconto: <strong style={{ color:"#EF4444" }}>- R$ {(b.discount_total).toFixed(2).replace(".",",")}</strong></div>}
+                      <div style={{ fontSize:20, fontWeight:800, borderTop:"2px solid #0F172A", paddingTop:8, marginTop:8 }}>
+                        TOTAL: R$ {(b.total || 0).toFixed(2).replace(".",",")}
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop:80, display:"flex", justifyContent:"space-between" }}>
+                      <div style={{ textAlign:"center" }}>
+                        <div style={{ borderTop:"1px solid #333", width:250, paddingTop:8, fontSize:12 }}>Profissional Responsável</div>
+                      </div>
+                      <div style={{ textAlign:"center" }}>
+                        <div style={{ borderTop:"1px solid #333", width:250, paddingTop:8, fontSize:12 }}>Paciente</div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop:40, textAlign:"center", fontSize:11, color:"#94A3B8" }}>
+                      Documento gerado em {new Date().toLocaleString("pt-BR")} · O+ Fichas — Prontuário Eletrônico
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </Modal>
 
           {/* ═══ ARRIVAL CONTROL MODAL ═══ */}
