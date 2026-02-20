@@ -8,6 +8,7 @@ import {
   Users,
   UserRound,
   ClipboardList,
+  DollarSign,
   LogOut,
   Menu,
   X,
@@ -19,6 +20,7 @@ const links = [
   { href: "/professionals", label: "Profissionais", icon: Users },
   { href: "/patients", label: "Pacientes", icon: UserRound },
   { href: "/waitlist", label: "Fila de Espera", icon: ClipboardList },
+  { href: "/financial", label: "Financeiro", icon: DollarSign },
 ];
 
 function isActive(pathname: string, href: string): boolean {

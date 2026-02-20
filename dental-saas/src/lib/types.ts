@@ -97,3 +97,121 @@ export interface WaitlistEvent {
   note: string;
   created_at: string;
 }
+
+// ─── Financial Module ────────────────────────────────────────
+
+export type FinancialType = "IN" | "OUT";
+export type ReceivableStatus = "open" | "paid" | "overdue" | "renegotiated";
+export type PayableStatus = "open" | "paid" | "overdue";
+export type OriginType = "ortho_contract" | "procedure" | "manual" | "installment";
+export type OrthoStatus = "active" | "completed" | "cancelled";
+export type PaymentMethod =
+  | "cash"
+  | "credit_card"
+  | "debit_card"
+  | "pix"
+  | "bank_transfer"
+  | "check"
+  | "other";
+
+export interface Category {
+  id: string;
+  clinic_id: string;
+  name: string;
+  type: FinancialType;
+  created_at: string;
+}
+
+export interface CostCenter {
+  id: string;
+  clinic_id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface FinancialTransaction {
+  id: string;
+  clinic_id: string;
+  type: FinancialType;
+  patient_id: string | null;
+  total_amount: number;
+  payment_method: PaymentMethod;
+  transaction_date: string;
+  description: string;
+  created_by: string | null;
+  created_at: string;
+  patient?: Patient | null;
+  entries?: FinancialEntry[];
+}
+
+export interface FinancialEntry {
+  id: string;
+  clinic_id: string;
+  transaction_id: string;
+  category_id: string | null;
+  cost_center_id: string | null;
+  amount: number;
+  created_at: string;
+  category?: Category | null;
+  cost_center?: CostCenter | null;
+}
+
+export interface Receivable {
+  id: string;
+  clinic_id: string;
+  patient_id: string | null;
+  origin_type: OriginType;
+  origin_id: string | null;
+  installment_num: number | null;
+  total_installments: number | null;
+  due_date: string;
+  amount: number;
+  status: ReceivableStatus;
+  paid_amount: number;
+  paid_at: string | null;
+  description: string;
+  created_at: string;
+  patient?: Patient | null;
+}
+
+export interface Payable {
+  id: string;
+  clinic_id: string;
+  supplier: string;
+  due_date: string;
+  amount: number;
+  status: PayableStatus;
+  paid_amount: number;
+  paid_at: string | null;
+  category_id: string | null;
+  cost_center_id: string | null;
+  description: string;
+  created_at: string;
+  category?: Category | null;
+  cost_center?: CostCenter | null;
+}
+
+export interface OrthoContract {
+  id: string;
+  clinic_id: string;
+  patient_id: string;
+  monthly_amount: number;
+  total_months: number;
+  due_day: number;
+  start_date: string;
+  status: OrthoStatus;
+  notes: string;
+  created_at: string;
+  patient?: Patient | null;
+}
+
+export interface RecurringRule {
+  id: string;
+  clinic_id: string;
+  type: "receivable" | "payable";
+  entity_id: string;
+  frequency: "monthly";
+  next_run: string;
+  active: boolean;
+  created_at: string;
+}
