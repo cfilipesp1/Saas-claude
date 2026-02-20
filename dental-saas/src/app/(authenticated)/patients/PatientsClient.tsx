@@ -90,12 +90,16 @@ export default function PatientsClient({
         placeholder="Email"
         className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
       />
-      <input
-        name="birth_date"
-        type="date"
-        defaultValue={defaults?.birth_date || ""}
-        className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
-      />
+      <div className="flex flex-col">
+        <label htmlFor="birth_date" className="text-xs text-slate-500 mb-1">Data de Nascimento (opcional)</label>
+        <input
+          id="birth_date"
+          name="birth_date"
+          type="date"
+          defaultValue={defaults?.birth_date || ""}
+          className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
+        />
+      </div>
       <input
         name="address"
         defaultValue={defaults?.address}
