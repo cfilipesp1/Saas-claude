@@ -41,14 +41,15 @@ export async function createPatient(formData: FormData) {
     throw new Error("Nome é obrigatório");
   }
 
+  const birthDate = (formData.get("birth_date") as string) || null;
+
   const { error } = await supabase.from("patients").insert({
     name: name.trim(),
     phone: (formData.get("phone") as string) || "",
     email: (formData.get("email") as string) || "",
     cpf: (formData.get("cpf") as string) || "",
-    birth_date: (formData.get("birth_date") as string) || null,
+    birth_date: birthDate || null,
     notes: (formData.get("notes") as string) || "",
-    clinic_id: "00000000-0000-0000-0000-000000000000", // overwritten by trigger
   });
 
   if (error) throw new Error(error.message);

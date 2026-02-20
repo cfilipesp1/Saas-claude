@@ -55,7 +55,6 @@ export async function createWaitlistEntry(formData: FormData) {
       priority,
       notes,
       status: "NEW" as WaitlistStatus,
-      clinic_id: "00000000-0000-0000-0000-000000000000", // overwritten by trigger
     })
     .select()
     .single();
@@ -69,7 +68,6 @@ export async function createWaitlistEntry(formData: FormData) {
     to_status: "NEW",
     actor_user_id: user?.id ?? null,
     note: "Paciente adicionado à fila",
-    clinic_id: "00000000-0000-0000-0000-000000000000", // overwritten by trigger
   });
 
   if (eventError) {
@@ -105,7 +103,6 @@ export async function updateWaitlistStatus(
     to_status: toStatus,
     actor_user_id: user?.id ?? null,
     note: note || `Status alterado de ${fromStatus} para ${toStatus}`,
-    clinic_id: "00000000-0000-0000-0000-000000000000", // overwritten by trigger
   });
 
   if (eventError) {

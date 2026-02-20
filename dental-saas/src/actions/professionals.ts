@@ -24,7 +24,6 @@ export async function createProfessional(formData: FormData) {
   const { error } = await supabase.from("professionals").insert({
     name: name.trim(),
     specialty: specialty || "",
-    clinic_id: "00000000-0000-0000-0000-000000000000", // overwritten by trigger
   });
 
   if (error) throw new Error(error.message);

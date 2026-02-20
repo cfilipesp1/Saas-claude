@@ -55,10 +55,7 @@ export async function upsertAnamnesis(patientId: string, formData: FormData) {
 
   // Use upsert to avoid read-then-write race condition
   const { error } = await supabase.from("anamnesis").upsert(
-    {
-      ...payload,
-      clinic_id: "00000000-0000-0000-0000-000000000000", // overwritten by trigger
-    },
+    payload,
     { onConflict: "patient_id" }
   );
 
