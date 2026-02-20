@@ -78,6 +78,12 @@ export default function PatientsClient({
         className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
       />
       <input
+        name="codigo"
+        defaultValue={defaults?.codigo}
+        placeholder="Código"
+        className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
+      />
+      <input
         name="phone"
         defaultValue={defaults?.phone}
         placeholder="Telefone"
@@ -104,6 +110,18 @@ export default function PatientsClient({
         name="address"
         defaultValue={defaults?.address}
         placeholder="Endereço"
+        className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
+      />
+      <input
+        name="responsavel_clinico_id"
+        defaultValue={defaults?.responsavel_clinico_id}
+        placeholder="Responsável Clínico"
+        className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
+      />
+      <input
+        name="responsavel_orto_id"
+        defaultValue={defaults?.responsavel_orto_id}
+        placeholder="Responsável Ortodôntico"
         className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
       />
     </>

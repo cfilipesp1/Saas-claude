@@ -266,6 +266,7 @@ export default function PatientDetailClient({
           {!editingData ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <InfoField label="Nome" value={patient.name} />
+              <InfoField label="Código" value={patient.codigo} />
               <InfoField label="Telefone" value={patient.phone} />
               <InfoField label="Email" value={patient.email} />
               <InfoField
@@ -277,6 +278,8 @@ export default function PatientDetailClient({
                 }
               />
               <InfoField label="Endereço" value={patient.address} />
+              <InfoField label="Responsável Clínico" value={patient.responsavel_clinico_id} />
+              <InfoField label="Responsável Ortodôntico" value={patient.responsavel_orto_id} />
             </div>
           ) : (
             <form
@@ -285,6 +288,7 @@ export default function PatientDetailClient({
             >
               <input type="hidden" name="id" value={patient.id} />
               <FormField label="Nome *" name="name" defaultValue={patient.name} required />
+              <FormField label="Código" name="codigo" defaultValue={patient.codigo} />
               <FormField label="Telefone" name="phone" defaultValue={patient.phone} />
               <FormField label="Email" name="email" type="email" defaultValue={patient.email} />
               <FormField
@@ -294,6 +298,8 @@ export default function PatientDetailClient({
                 defaultValue={patient.birth_date || ""}
               />
               <FormField label="Endereço" name="address" defaultValue={patient.address} />
+              <FormField label="Responsável Clínico" name="responsavel_clinico_id" defaultValue={patient.responsavel_clinico_id} />
+              <FormField label="Responsável Ortodôntico" name="responsavel_orto_id" defaultValue={patient.responsavel_orto_id} />
               <div className="sm:col-span-2 lg:col-span-3 flex gap-3 justify-end">
                 <button
                   type="button"
