@@ -11,8 +11,34 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
   <style>
+    :root {
+      --radius: 12px;
+      --radius-sm: 8px;
+      --radius-lg: 16px;
+      --space-1: 8px;
+      --space-2: 12px;
+      --space-3: 16px;
+      --space-4: 20px;
+      --space-5: 24px;
+      --color-primary: #0EA5E9;
+      --color-primary-dark: #0284C7;
+      --color-danger: #EF4444;
+      --color-success: #10B981;
+      --color-warning: #F59E0B;
+      --color-text: #0F172A;
+      --color-text-secondary: #64748B;
+      --color-text-muted: #94A3B8;
+      --color-border: #E2E8F0;
+      --color-bg: #F1F5F9;
+      --color-bg-card: #fff;
+      --color-surface: #F8FAFC;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+      --shadow-lg: 0 8px 30px rgba(0,0,0,0.12);
+      --font: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'DM Sans', 'Segoe UI', system-ui, sans-serif; background: #F1F5F9; color: #0F172A; }
+    body { font-family: var(--font); background: var(--color-bg); color: var(--color-text); }
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
     input, select, textarea { font-family: inherit; }
@@ -23,7 +49,37 @@
     .tipo-card { padding: 16px 24px; border-radius: 12px; border: 2px solid #E2E8F0; cursor: pointer; text-align: center; transition: all 0.2s; flex: 1; }
     .tipo-card:hover { border-color: #94A3B8; }
     .tipo-card.selected { border-color: currentColor; }
-    
+
+    /* Patient Detail Tabs */
+    .pd-tabs { display:flex; gap:0; background:#fff; border-bottom:1px solid var(--color-border); overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    .pd-tabs::-webkit-scrollbar { display:none; }
+    .pd-tab { flex:0 0 auto; padding:12px 16px; border:none; border-bottom:2px solid transparent; background:none; font-size:13px; font-weight:600; color:var(--color-text-muted); cursor:pointer; transition:all 0.15s; white-space:nowrap; min-height:44px; }
+    .pd-tab:hover { color:var(--color-text-secondary); }
+    .pd-tab[data-active="true"] { color:var(--color-primary); border-bottom-color:var(--color-primary); font-weight:700; }
+
+    /* Summary cards grid */
+    .summary-grid { display:grid; grid-template-columns:1fr 1fr; gap:var(--space-2); padding:0; }
+    @media (min-width: 640px) { .summary-grid { grid-template-columns:repeat(4, 1fr); } }
+    .summary-card { background:var(--color-bg-card); border:1px solid var(--color-border); border-radius:var(--radius); padding:var(--space-2) var(--space-3); }
+    .summary-card-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--color-text-muted); margin-bottom:4px; }
+    .summary-card-value { font-size:14px; font-weight:700; color:var(--color-text); }
+
+    /* Encounter timeline */
+    .encounter-timeline { position:relative; }
+    .encounter-card { position:relative; padding-left:20px; margin-bottom:var(--space-3); }
+    .encounter-card::before { content:''; position:absolute; left:5px; top:24px; bottom:-16px; width:1px; background:var(--color-border); }
+    .encounter-card:last-child::before { display:none; }
+    .encounter-card::after { content:''; position:absolute; left:0; top:16px; width:11px; height:11px; border-radius:50%; border:2px solid var(--color-primary); background:var(--color-bg-card); z-index:1; }
+
+    /* Action menu overlay */
+    .action-menu-overlay { position:fixed; inset:0; z-index:299; background:rgba(0,0,0,0.2); }
+    .action-menu { position:absolute; right:0; top:100%; background:#fff; border-radius:var(--radius); box-shadow:var(--shadow-lg); min-width:200px; z-index:300; overflow:hidden; border:1px solid var(--color-border); }
+    .action-menu-item { width:100%; text-align:left; background:none; border:none; padding:11px 16px; font-size:13px; color:var(--color-text); cursor:pointer; display:flex; align-items:center; gap:8px; transition:background 0.1s; }
+    .action-menu-item:hover { background:var(--color-surface); }
+    .action-menu-item[data-danger="true"] { color:var(--color-danger); }
+    .action-menu-item[data-danger="true"]:hover { background:#FEF2F2; }
+    .action-menu-divider { height:1px; background:var(--color-border); margin:4px 0; }
+
     /* Animações Realtime */
     @keyframes spin {
       from { transform: rotate(0deg); }
@@ -1069,6 +1125,46 @@
         </button>
       );
     }
+    // ── ConfirmModal Component ──
+    function ConfirmModal({ config, onClose }) {
+      if (!config) return null;
+      return (
+        <div style={{ position:"fixed", inset:0, zIndex:1100, display:"flex", alignItems:"center", justifyContent:"center", background:"rgba(15,23,42,0.6)", backdropFilter:"blur(4px)" }} onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} style={{ background:"#fff", borderRadius:"var(--radius-lg)", width:"min(400px,90%)", boxShadow:"var(--shadow-lg)", overflow:"hidden" }}>
+            <div style={{ padding:"var(--space-4) var(--space-5)" }}>
+              <div style={{ fontSize:17, fontWeight:700, color: config.danger ? "var(--color-danger)" : "var(--color-text)", marginBottom:"var(--space-1)" }}>{config.title}</div>
+              <div style={{ fontSize:13, color:"var(--color-text-secondary)", lineHeight:1.5 }}>{config.message}</div>
+            </div>
+            <div style={{ padding:"var(--space-2) var(--space-5) var(--space-4)", display:"flex", gap:"var(--space-2)", justifyContent:"flex-end" }}>
+              <button onClick={onClose} style={{ background:"var(--color-surface)", border:"1px solid var(--color-border)", borderRadius:"var(--radius-sm)", padding:"10px 20px", fontSize:13, fontWeight:600, color:"var(--color-text-secondary)", cursor:"pointer", minHeight:44 }} aria-label="Cancelar">Cancelar</button>
+              <button onClick={() => { config.onConfirm(); onClose(); }} style={{ background: config.danger ? "var(--color-danger)" : "var(--color-primary)", color:"#fff", border:"none", borderRadius:"var(--radius-sm)", padding:"10px 20px", fontSize:13, fontWeight:700, cursor:"pointer", minHeight:44 }} aria-label={config.confirmLabel || "Confirmar"}>{config.confirmLabel || "Confirmar"}</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    // ── ActionMenu Component ──
+    function ActionMenu({ open, onClose, items, anchorRight }) {
+      if (!open) return null;
+      const handleKeyDown = (e) => { if (e.key === "Escape") onClose(); };
+      return (
+        <React.Fragment>
+          <div className="action-menu-overlay" onClick={onClose} onKeyDown={handleKeyDown} tabIndex={-1} />
+          <div className="action-menu" style={anchorRight ? { right:0 } : { left:0 }}>
+            {items.map((item, i) => {
+              if (item.divider) return <div key={i} className="action-menu-divider" />;
+              return (
+                <button key={i} className="action-menu-item" data-danger={item.danger || undefined} onClick={() => { item.onClick(); onClose(); }} aria-label={item.label}>
+                  {item.icon && <span style={{ fontSize:15, width:20, textAlign:"center" }}>{item.icon}</span>}
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        </React.Fragment>
+      );
+    }
+
     // SVG tooth shapes for visual odontogram
     const ToothSVG = ({ type, number, isSelected, onClick }) => {
       const baseColor = isSelected ? "#0EA5E9" : "#B8C5D6";
@@ -1208,9 +1304,14 @@
       const [view, setView] = useState("list");
       const [selectedPatient, setSelectedPatient] = useState(null);
       const [searchTerm, setSearchTerm] = useState("");
-      const [patientTab, setPatientTab] = useState("orto");
+      const [patientTab, setPatientTab] = useState("atendimentos");
+      const [patientRecordFilter, setPatientRecordFilter] = useState("orto");
       const [auditFilter, setAuditFilter] = useState("");
       const [docDateFilter, setDocDateFilter] = useState("");
+      const [showPatientMenu, setShowPatientMenu] = useState(false);
+      const [showEncounterMenu, setShowEncounterMenu] = useState(null);
+      const [confirmModal, setConfirmModal] = useState(null);
+      const [expandedNotes, setExpandedNotes] = useState({});
 
       // ── Modals ──
       const [showAppMenu, setShowAppMenu] = useState(false);
@@ -2331,7 +2432,10 @@
           
           setSelectedPatient(patientWithRecords);
           setView("patient");
-          setPatientTab("orto");
+          setPatientTab("atendimentos");
+          setPatientRecordFilter("orto");
+          setShowPatientMenu(false);
+          setShowEncounterMenu(null);
           addAudit("VISUALIZAR_PRONTUARIO","paciente",fresh.id,fresh.name,"");
         } catch (err) {
           console.error('Erro ao carregar atendimentos:', err);
@@ -2340,7 +2444,8 @@
           const localRecords = getLocalData('records', fresh.id) || [];
           setSelectedPatient({...fresh, records: localRecords});
           setView("patient");
-          setPatientTab("orto");
+          setPatientTab("atendimentos");
+          setPatientRecordFilter("orto");
         }
       };
 
@@ -2788,11 +2893,11 @@
           <div style={{ background:"#0F172A", color:"#fff", padding:"0 16px", height:52, display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:100 }}>
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
               {view === "patient" && (
-                <button onClick={() => { setView("list"); setSelectedPatient(null); setActiveTab("pacientes"); }} style={{ background:"none", border:"none", color:"#fff", cursor:"pointer", fontSize:18, padding:4, display:"flex", alignItems:"center" }}>
+                <button onClick={() => { setView("list"); setSelectedPatient(null); setActiveTab("pacientes"); setShowPatientMenu(false); setShowEncounterMenu(null); setConfirmModal(null); }} style={{ background:"none", border:"none", color:"#fff", cursor:"pointer", fontSize:18, padding:4, display:"flex", alignItems:"center", minWidth:44, minHeight:44 }} aria-label="Voltar">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M13 15L8 10L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </button>
               )}
-              <div style={{ fontSize:16, fontWeight:700, letterSpacing:-0.3, cursor:"pointer" }} onClick={() => { setView("list"); setActiveTab("fila"); }}>O+ Fichas</div>
+              <div style={{ fontSize:16, fontWeight:700, letterSpacing:-0.3, cursor:"pointer" }} onClick={() => { setView("list"); setActiveTab("fila"); }}>{view === "patient" ? "Paciente" : "O+ Fichas"}</div>
               {/* Status chip */}
               {syncing ? (
                 <StatusChip label="Sincronizando" color="#F59E0B" bg="rgba(245,158,11,0.15)" small />
@@ -3093,245 +3198,448 @@
             </div>
           )}
 
-          {/* ═══ PATIENT DETAIL ═══ */}
-          {view === "patient" && selectedPatient && (
-            <div style={{ padding:"20px 24px", maxWidth:800, margin:"0 auto" }}>
-              {/* Info card */}
-              <div style={{ ...cardStyle, background:"linear-gradient(135deg,#F0F9FF,#F8FAFC)" }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start", flexWrap:"wrap", gap:12 }}>
-                  <div style={{ flex:1 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-                      {selectedPatient.codigo && <span style={{ fontSize:13, fontWeight:700, color:"#0EA5E9", background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:8, padding:"4px 12px" }}>{selectedPatient.codigo}</span>}
-                      <span style={{ fontSize:22, fontWeight:800 }}>{selectedPatient.name}</span>
-                      {selectedPatient.is_orthodontic_patient && (
-                        <span style={{ fontSize:11, fontWeight:700, color:"#7C3AED", background:"#F5F3FF", border:"1px solid #C4B5FD", borderRadius:8, padding:"4px 12px" }}>
-                          Paciente de Ortodontia
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize:13, color:"#64748B", marginTop:4, lineHeight:1.8 }}>
-                      {selectedPatient.birthDate && <span>Nasc: {formatDate(selectedPatient.birthDate+"T12:00:00")} </span>}
-                      {selectedPatient.phone && <span>Tel: {selectedPatient.phone} </span>}
-                      {selectedPatient.codigo && <span>Cód: {selectedPatient.codigo} </span>}
-                      {selectedPatient.email && <span>Email: {selectedPatient.email} </span>}
-                      {selectedPatient.address && <div>Endereço: {selectedPatient.address}</div>}
-                    </div>
-                    <div style={{ display:"flex", gap:12, marginTop:10, flexWrap:"wrap" }}>
-                      <div style={{ background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:10, padding:"8px 14px" }}>
-                        <div style={{ fontSize:10, fontWeight:700, color:"#3B82F6", textTransform:"uppercase" }}>Resp. Clínico</div>
-                        <div style={{ fontSize:14, fontWeight:700, color:"#1E40AF" }}>{getUserName(selectedPatient.responsavel_clinico_id)}</div>
+          {/* ═══ PATIENT DETAIL (Refactored) ═══ */}
+          {view === "patient" && selectedPatient && (() => {
+            const sp = selectedPatient;
+            const orthoRecs = sp.records.filter(r => r.tipo_atendimento === "ORTODONTIA");
+            const geralRecs = sp.records.filter(r => r.tipo_atendimento !== "ORTODONTIA");
+            const temFinanceiroDetail = sp.financeiro && (sp.financeiro.orcamento_total > 0 || (sp.financeiro.pagamentos && sp.financeiro.pagamentos.length > 0));
+            const totalPagoDetail = temFinanceiroDetail ? (sp.financeiro.pagamentos || []).reduce((s, pg) => s + (parseFloat(pg.valor) || 0), 0) : 0;
+            const saldoDetail = temFinanceiroDetail ? (sp.financeiro.orcamento_total || 0) - totalPagoDetail : 0;
+            const nextAppt = sp.records
+              .filter(r => r.nextAppointment)
+              .map(r => r.nextAppointment)
+              .sort()
+              .find(d => d >= formatDateISO(new Date()));
+            const pdTabs = [
+              { key:"atendimentos", label:"Atendimentos", count: sp.records.length },
+              { key:"anamnese", label:"Anamnese" },
+              { key:"orcamento", label:"Orçamento" },
+              { key:"financeiro", label:"Financeiro" },
+              { key:"arquivos", label:"Arquivos", count: (sp.documents || []).length }
+            ];
+            return (
+            <div style={{ paddingBottom:80 }}>
+              {/* ── 2) PatientHeader ── */}
+              <div style={{ background:"#fff", borderBottom:"1px solid var(--color-border)", padding:"var(--space-3) var(--space-4)" }}>
+                <div style={{ maxWidth:800, margin:"0 auto" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12 }}>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:4 }}>
+                        <h1 style={{ fontSize:20, fontWeight:800, margin:0, color:"var(--color-text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{sp.name}</h1>
+                        {sp.is_orthodontic_patient && (
+                          <span style={{ fontSize:10, fontWeight:700, color:"#7C3AED", background:"#F5F3FF", border:"1px solid #DDD6FE", borderRadius:20, padding:"2px 10px", whiteSpace:"nowrap" }}>Ortodontia</span>
+                        )}
+                        {!sp.is_orthodontic_patient && (
+                          <span style={{ fontSize:10, fontWeight:700, color:"var(--color-primary)", background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:20, padding:"2px 10px", whiteSpace:"nowrap" }}>Clínico</span>
+                        )}
                       </div>
-                      <div style={{ background:"#F0FDFA", border:"1px solid #99F6E4", borderRadius:10, padding:"8px 14px" }}>
-                        <div style={{ fontSize:10, fontWeight:700, color:"#14B8A6", textTransform:"uppercase" }}>Resp. Ortodontia</div>
-                        <div style={{ fontSize:14, fontWeight:700, color:"#0F766E" }}>{getUserName(selectedPatient.responsavel_orto_id)}</div>
+                      <div style={{ fontSize:12, color:"var(--color-text-secondary)", display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+                        {sp.birthDate && <span>Nasc: {formatDate(sp.birthDate+"T12:00:00")}</span>}
+                        {sp.phone && <span>{sp.birthDate ? "·" : ""} {sp.phone}</span>}
+                        {sp.codigo && <span>· Cód: {sp.codigo}</span>}
                       </div>
                     </div>
-                  </div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                    {isAdmin && <button onClick={() => { setRespForm({ responsavel_clinico_id:selectedPatient.responsavel_clinico_id, responsavel_orto_id:selectedPatient.responsavel_orto_id }); setShowChangeResp(true); }} style={{ ...btnSecondary, fontSize:11, padding:"6px 12px" }}>Alterar Responsáveis</button>}
-                    {isAdmin && <button onClick={() => { if (confirm("Excluir este paciente e todos os registros?")) deletePatient(selectedPatient.id); }} style={{ ...btnDanger, fontSize:11, padding:"6px 12px" }}>Excluir Paciente</button>}
+                    <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+                      <button onClick={() => setShowNewRecord(true)} style={{ background:"var(--color-primary)", color:"#fff", border:"none", borderRadius:"var(--radius-sm)", padding:"10px 16px", fontSize:13, fontWeight:700, cursor:"pointer", minHeight:44, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }} aria-label="Novo Atendimento">
+                        <span style={{ fontSize:16, lineHeight:1 }}>+</span> Atender
+                      </button>
+                      <div style={{ position:"relative" }}>
+                        <button onClick={() => setShowPatientMenu(!showPatientMenu)} style={{ background:"var(--color-surface)", border:"1px solid var(--color-border)", borderRadius:"var(--radius-sm)", width:44, height:44, cursor:"pointer", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center", color:"var(--color-text-secondary)" }} aria-label="Mais ações do paciente">⋯</button>
+                        <ActionMenu open={showPatientMenu} onClose={() => setShowPatientMenu(false)} anchorRight items={[
+                          { icon:"👥", label:"Alterar responsáveis", onClick:() => { setRespForm({ responsavel_clinico_id:sp.responsavel_clinico_id, responsavel_orto_id:sp.responsavel_orto_id }); setShowChangeResp(true); } },
+                          { divider:true },
+                          ...(isAdmin ? [{ icon:"🗑️", label:"Excluir paciente", danger:true, onClick:() => setConfirmModal({ title:"Excluir paciente", message:`Tem certeza que deseja excluir "${sp.name}" e TODOS os seus registros? Esta ação é irreversível.`, danger:true, confirmLabel:"Sim, excluir", onConfirm:() => deletePatient(sp.id) }) }] : [])
+                        ]} />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Ortodontia Status */}
-              {selectedPatient.is_orthodontic_patient && (
-                <div style={{ ...cardStyle, marginBottom:0, background:"linear-gradient(135deg,#F5F3FF,#EDE9FE)", borderColor:"#C4B5FD" }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:12, flex:1 }}>
-                      <div>
-                        <div style={{ fontSize:10, fontWeight:700, color:"#7C3AED", textTransform:"uppercase", marginBottom:4 }}>Status Ortodontia</div>
-                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                          {(() => {
-                            const sc = ORTHO_STATUS_COLORS[selectedPatient.ortho_status] || { color:"#64748B", bg:"#F1F5F9" };
-                            return <span style={{ fontSize:14, fontWeight:800, color:sc.color, background:sc.bg, border:`1px solid ${sc.color}30`, borderRadius:8, padding:"4px 14px" }}>{selectedPatient.ortho_status || "—"}</span>;
-                          })()}
-                        </div>
-                      </div>
-                      {selectedPatient.ortho_status_updated_at && (
-                        <div style={{ fontSize:10, color:"#8B5CF6" }}>
-                          Atualizado em {formatDate(selectedPatient.ortho_status_updated_at)} por {selectedPatient.ortho_status_updated_by || "—"}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                      <select value={selectedPatient.ortho_status || ""} onChange={e => {
-                        const nv = e.target.value;
-                        if (nv && nv !== selectedPatient.ortho_status) {
-                          if (confirm(`Alterar status ortodôntico de "${selectedPatient.ortho_status || "—"}" para "${nv}"?`)) {
-                            updateOrthoStatus(selectedPatient.id, nv, "Alteração manual");
-                          } else { e.target.value = selectedPatient.ortho_status || ""; }
-                        }
-                      }} style={{ padding:"6px 10px", borderRadius:8, border:"1px solid #C4B5FD", fontSize:12, fontWeight:600, color:"#5B21B6", background:"#fff", cursor:"pointer", outline:"none" }}>
-                        {ORTHO_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                      {isAdmin && (
-                        <button onClick={() => {
-                          if (confirm("Remover classificação de Ortodontia deste paciente?\n\nIsso não apaga os orçamentos, apenas remove o status ortodôntico.")) {
-                            removeOrthoClassification(selectedPatient.id);
-                          }
-                        }} style={{ ...btnDanger, fontSize:10, padding:"5px 8px", whiteSpace:"nowrap" }}>Remover Ortodontia</button>
-                      )}
+              {/* ── 3) SummaryCards ── */}
+              <div style={{ padding:"var(--space-3) var(--space-4)", maxWidth:800, margin:"0 auto" }}>
+                <div className="summary-grid">
+                  <div className="summary-card">
+                    <div className="summary-card-label">Etapa Ortodontia</div>
+                    <div className="summary-card-value">
+                      {sp.is_orthodontic_patient ? (() => {
+                        const sc = ORTHO_STATUS_COLORS[sp.ortho_status] || { color:"#64748B", bg:"#F1F5F9" };
+                        return <span style={{ color:sc.color, background:sc.bg, borderRadius:6, padding:"2px 8px", fontSize:12 }}>{sp.ortho_status || "—"}</span>;
+                      })() : <span style={{ color:"var(--color-text-muted)", fontSize:12 }}>N/A</span>}
                     </div>
                   </div>
-                  {/* Histórico de mudanças de status */}
-                  {selectedPatient.ortho_status_history && selectedPatient.ortho_status_history.length > 1 && (
-                    <details style={{ marginTop:10 }}>
-                      <summary style={{ fontSize:11, color:"#7C3AED", cursor:"pointer", fontWeight:600 }}>Histórico de alterações ({selectedPatient.ortho_status_history.length})</summary>
-                      <div style={{ marginTop:6, maxHeight:150, overflowY:"auto" }}>
-                        {[...selectedPatient.ortho_status_history].reverse().map(h => (
-                          <div key={h.id} style={{ fontSize:11, color:"#64748B", padding:"3px 0", borderBottom:"1px solid #E2E8F0" }}>
-                            <span style={{ fontWeight:600 }}>{formatDate(h.changed_at)}</span> — {h.old_status || "Nenhum"} → <strong>{h.new_status || "Removido"}</strong> — por {h.changed_by} {h.reason && <span style={{ fontStyle:"italic" }}>({h.reason})</span>}
-                          </div>
-                        ))}
-                      </div>
-                    </details>
-                  )}
-                </div>
-              )}
-
-              {/* Action buttons */}
-              <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
-                <button onClick={() => { setAnamnesisForm({...defaultAnamnesis, ...selectedPatient.anamnesis}); setShowAnamnesis(true); setEditingAnamnesis(false); }} style={btnSecondary}>Anamnese</button>
-                <button onClick={() => { setOrcamentoView("list"); setShowOrcamentos(true); }} style={{...btnSecondary, background:"#7C3AED", color:"#fff", borderColor:"#7C3AED"}}>📋 Orçamento</button>
-                <button onClick={() => { docInputRef.current?.click(); }} style={btnSecondary}>Anexar Documento</button>
-                {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && (
-                  <button onClick={() => setShowFinanceiro(true)} style={{...btnSecondary, background:"#059669", color:"#fff", borderColor:"#059669"}}>💰 Financeiro</button>
-                )}
-                <button onClick={() => setShowNewRecord(true)} style={btnPrimary}>+ Novo Atendimento</button>
-                <input ref={docInputRef} type="file" accept="image/*,.pdf,.docx" multiple onChange={handleDocUpload} style={{ display:"none" }} />
-              </div>
-
-              {/* Patient Documents */}
-              {selectedPatient.documents?.length > 0 && (
-                <div style={{ ...cardStyle, marginBottom:16 }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, flexWrap:"wrap", gap:8 }}>
-                    <div style={{ fontSize:14, fontWeight:700, color:"#334155" }}>Documentos do Paciente ({selectedPatient.documents.length})</div>
-                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                      <label style={{ fontSize:11, color:"#64748B", fontWeight:600 }}>Data:</label>
-                      <input type="date" value={docDateFilter} onChange={e => setDocDateFilter(e.target.value)}
-                        style={{ padding:"4px 8px", borderRadius:8, border:"1px solid #CBD5E1", fontSize:12, outline:"none", background:"#F8FAFC" }} />
-                      {docDateFilter && <button onClick={() => setDocDateFilter("")} style={{ background:"none", border:"none", color:"#94A3B8", cursor:"pointer", fontSize:14, padding:0 }}>×</button>}
+                  <div className="summary-card">
+                    <div className="summary-card-label">Financeiro</div>
+                    <div className="summary-card-value">
+                      {temFinanceiroDetail ? (
+                        saldoDetail > 0
+                          ? <span style={{ color:"var(--color-danger)", fontSize:13 }}>Devendo R$ {saldoDetail.toFixed(2)}</span>
+                          : <span style={{ color:"var(--color-success)", fontSize:13 }}>Em dia</span>
+                      ) : <span style={{ color:"var(--color-text-muted)", fontSize:12 }}>Sem dados</span>}
                     </div>
                   </div>
-                  <div style={{ display:"flex", flexWrap:"wrap", gap:10 }}>
-                    {selectedPatient.documents
-                      .filter(doc => !docDateFilter || (doc.uploadedAt && doc.uploadedAt.startsWith(docDateFilter)))
-                      .map(doc => (
-                      <div key={doc.id} style={{ border:"1px solid #E2E8F0", borderRadius:10, padding:10, width:140, position:"relative" }}>
-                        <div style={{ width:"100%", height:80, borderRadius:6, overflow:"hidden" }}>
-                          <FileThumb fileId={doc.id} cache={fileCache} loadFn={loadFile} type={doc.type} name={doc.name}
-                            onClick={async () => { const d = fileCache[doc.id] || await FileDB.get(doc.id); if (d) { if (doc.type?.startsWith("image/")) setViewingPhoto(d); else { const a=document.createElement("a"); a.href=d; a.download=doc.name; a.click(); } } }}
-                            style={{ borderRadius:6 }} />
-                        </div>
-                        <div style={{ fontSize:10, color:"#64748B", marginTop:6, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={doc.name}>{doc.name}</div>
-                        <div style={{ fontSize:9, color:"#94A3B8" }}>{formatSize(doc.size)} · {doc.uploadedByName}</div>
-                        {doc.uploadedAt && <div style={{ fontSize:9, color:"#94A3B8" }}>{formatDate(doc.uploadedAt)}</div>}
-                        {isAdmin && <button onClick={() => deleteDoc(doc.id)} style={{ position:"absolute", top:4, right:4, background:"rgba(239,68,68,0.9)", border:"none", borderRadius:"50%", width:18, height:18, color:"#fff", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>×</button>}
-                      </div>
-                    ))}
-                    {selectedPatient.documents.length > 0 && docDateFilter && selectedPatient.documents.filter(doc => doc.uploadedAt && doc.uploadedAt.startsWith(docDateFilter)).length === 0 && (
-                      <div style={{ fontSize:12, color:"#94A3B8", padding:16 }}>Nenhum documento nesta data.</div>
-                    )}
+                  <div className="summary-card">
+                    <div className="summary-card-label">Próx. consulta</div>
+                    <div className="summary-card-value" style={{ fontSize:13 }}>
+                      {nextAppt ? formatDate(nextAppt+"T12:00:00") : <span style={{ color:"var(--color-text-muted)", fontSize:12 }}>Nenhuma</span>}
+                    </div>
+                  </div>
+                  <div className="summary-card">
+                    <div className="summary-card-label">Responsáveis</div>
+                    <div style={{ fontSize:11, color:"var(--color-text)", lineHeight:1.5 }}>
+                      <div><span style={{ color:"var(--color-text-muted)" }}>Clín:</span> <strong>{getUserName(sp.responsavel_clinico_id)}</strong></div>
+                      <div><span style={{ color:"var(--color-text-muted)" }}>Orto:</span> <strong>{getUserName(sp.responsavel_orto_id)}</strong></div>
+                    </div>
                   </div>
                 </div>
-              )}
-
-              {/* Tabs */}
-              <div style={{ borderBottom:"2px solid #E2E8F0", marginBottom:16, display:"flex" }}>
-                <button className={`tab-btn ${patientTab==="orto"?"active":""}`} onClick={() => setPatientTab("orto")} style={patientTab==="orto"?{color:"#0EA5E9", borderBottomColor:"#0EA5E9"}:{}}>
-                  🦷 Ortodontia ({selectedPatient.records.filter(r=>r.tipo_atendimento==="ORTODONTIA").length})
-                </button>
-                <button className={`tab-btn ${patientTab==="geral"?"active":""}`} onClick={() => setPatientTab("geral")} style={patientTab==="geral"?{color:"#10B981", borderBottomColor:"#10B981"}:{}}>
-                  Clínico/Outros ({selectedPatient.records.filter(r=>r.tipo_atendimento!=="ORTODONTIA").length})
-                </button>
               </div>
 
-              {/* Records */}
-              {(() => {
-                const recs = selectedPatient.records.filter(r => patientTab==="orto" ? r.tipo_atendimento==="ORTODONTIA" : r.tipo_atendimento!=="ORTODONTIA");
-                if (recs.length === 0) return (
-                  <div style={{ textAlign:"center", padding:40, color:"#94A3B8", background:"#fff", borderRadius:14, border:"1px solid #E2E8F0" }}>
-                    <div style={{ fontSize:13 }}>Nenhum atendimento de {patientTab==="orto"?"ortodontia":"clínico geral"} registrado</div>
-                  </div>
-                );
-                return recs.map(rec => {
-                  const spec = SPECIALTIES[rec.specialty];
-                  return (
-                    <div key={rec.id} style={cardStyle}>
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start", marginBottom:10 }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-                          <span style={{ background:spec?.color+"18", color:spec?.color, padding:"4px 10px", borderRadius:8, fontSize:12, fontWeight:700 }}>{spec?.icon} {spec?.label}</span>
-                          <span style={{ fontSize:13, color:"#64748B", fontWeight:600 }}>{formatDate(rec.date+"T12:00:00")}</span>
-                          {rec.atendimento_fora_da_responsabilidade && <span style={{ background:"#FEF3C7", color:"#D97706", padding:"3px 8px", borderRadius:6, fontSize:10, fontWeight:700 }}>FORA DA RESP.</span>}
-                        </div>
-                        <button onClick={() => { if (confirm("Excluir este atendimento?")) deleteRecord(rec.id); }}
-                          style={{ background:"none", border:"none", color:"#CBD5E1", cursor:"pointer", fontSize:14 }}>🗑️</button>
-                      </div>
-                      <div style={{ fontSize:11, color:"#94A3B8", marginBottom:6 }}>
-                        Atendente: <strong style={{ color:"#475569" }}>{getUserName(rec.dentista_atendente_id)}</strong>
-                        {rec.atendimento_fora_da_responsabilidade && <span> · Resp. vigente: <strong style={{ color:"#475569" }}>{getUserName(rec.dentista_responsavel_no_momento_id)}</strong></span>}
-                        {rec.motivo_fora && <span> · Motivo: {rec.motivo_fora}</span>}
-                      </div>
-                      <div style={{ marginBottom:6 }}>
-                        {rec.procedures.map(pr => <Badge key={pr} text={pr} color={spec?.color || "#64748B"} />)}
-                      </div>
-                      {rec.teeth?.length > 0 && <div style={{ fontSize:12, color:"#64748B", marginBottom:4 }}><strong>Dentes:</strong> {rec.teeth.sort((a,b)=>a-b).join(", ")}</div>}
-                      {rec.wireInfo && (rec.wireInfo.upper || rec.wireInfo.lower) && (
-                        <div style={{ marginTop:6 }}>
-                          {rec.wireInfo.upper && (rec.wireInfo.upper.material || rec.wireInfo.upper.format || rec.wireInfo.upper.gauge) && (
-                            <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center", marginBottom:4 }}>
-                              <span style={{ fontSize:12, color:"#0369A1", fontWeight:600 }}>Fio Superior:</span>
-                              {rec.wireInfo.upper.material && <Badge text={rec.wireInfo.upper.material} color="#0EA5E9" />}
-                              {rec.wireInfo.upper.format && <Badge text={rec.wireInfo.upper.format} color="#0EA5E9" />}
-                              {rec.wireInfo.upper.gauge && <Badge text={rec.wireInfo.upper.gauge} color="#0EA5E9" />}
-                            </div>
-                          )}
-                          {rec.wireInfo.lower && (rec.wireInfo.lower.material || rec.wireInfo.lower.format || rec.wireInfo.lower.gauge) && (
-                            <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
-                              <span style={{ fontSize:12, color:"#0369A1", fontWeight:600 }}>Fio Inferior:</span>
-                              {rec.wireInfo.lower.material && <Badge text={rec.wireInfo.lower.material} color="#0EA5E9" />}
-                              {rec.wireInfo.lower.format && <Badge text={rec.wireInfo.lower.format} color="#0EA5E9" />}
-                              {rec.wireInfo.lower.gauge && <Badge text={rec.wireInfo.lower.gauge} color="#0EA5E9" />}
-                            </div>
-                          )}
-                        </div>
-                      )}
+              {/* ── 4) Tabs ── */}
+              <div className="pd-tabs" style={{ position:"sticky", top:52, zIndex:50 }}>
+                <div style={{ maxWidth:800, margin:"0 auto", display:"flex", width:"100%" }}>
+                  {pdTabs.map(t => (
+                    <button key={t.key} className="pd-tab" data-active={patientTab === t.key} onClick={() => setPatientTab(t.key)} aria-label={`Tab ${t.label}`}>
+                      {t.label}{t.count != null ? ` (${t.count})` : ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-                      {rec.notes && <div style={{ fontSize:13, color:"#475569", marginTop:8, padding:"10px 12px", background:"#F8FAFC", borderRadius:8, borderLeft:`3px solid ${spec?.color||"#CBD5E1"}` }}>{rec.notes}</div>}
-                      {rec.photos?.length > 0 && (
-                        <div style={{ marginTop:10 }}>
-                          <div style={{ fontSize:12, color:"#64748B", fontWeight:600, marginBottom:6 }}>Fotos ({rec.photos.length})</div>
-                          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-                            {rec.photos.map(ph => (
-                              <div key={ph.id} style={{ width:56, height:56, borderRadius:8, overflow:"hidden", border:"1px solid #E2E8F0", cursor:"pointer" }}>
-                                {ph.url ? (
-                                  <img src={ph.url} alt={ph.name} onClick={() => setViewingPhoto(ph.url)} style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:8 }} />
-                                ) : (
-                                  <FileThumb fileId={ph.id} cache={fileCache} loadFn={loadFile} type={ph.type || "image/jpeg"} name={ph.name}
-                                    onClick={async () => { const d = fileCache[ph.id] || await FileDB.get(ph.id); if (d) setViewingPhoto(d); }}
-                                    style={{ borderRadius:8 }} />
-                                )}
+              {/* ── 5) Tab Panels ── */}
+              <div style={{ padding:"var(--space-3) var(--space-4)", maxWidth:800, margin:"0 auto" }}>
+
+                {/* ─── TAB: ATENDIMENTOS ─── */}
+                {patientTab === "atendimentos" && (
+                  <div>
+                    {/* StatusOrthoCard */}
+                    {sp.is_orthodontic_patient && (
+                      <div style={{ ...cardStyle, marginBottom:"var(--space-3)", borderLeft:"3px solid #7C3AED" }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
+                          <div style={{ flex:1 }}>
+                            <div style={{ fontSize:13, fontWeight:700, color:"var(--color-text)", marginBottom:4 }}>Status Ortodontia</div>
+                            {sp.ortho_status_updated_at && (
+                              <div style={{ fontSize:10, color:"var(--color-text-muted)", marginBottom:8 }}>
+                                Atualizado em {formatDate(sp.ortho_status_updated_at)} por {sp.ortho_status_updated_by || "—"}
                               </div>
-                            ))}
+                            )}
+                            <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                              <select value={sp.ortho_status || ""} onChange={e => {
+                                const nv = e.target.value;
+                                if (nv && nv !== sp.ortho_status) {
+                                  setConfirmModal({ title:"Alterar status", message:`Alterar status ortodôntico de "${sp.ortho_status || "—"}" para "${nv}"?`, confirmLabel:"Alterar", onConfirm:() => updateOrthoStatus(sp.id, nv, "Alteração manual") });
+                                }
+                              }} style={{ padding:"8px 12px", borderRadius:"var(--radius-sm)", border:"1px solid #DDD6FE", fontSize:13, fontWeight:600, color:"#5B21B6", background:"#FDFCFF", cursor:"pointer", outline:"none", minHeight:40 }}>
+                                {ORTHO_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                              {sp.ortho_status_history && sp.ortho_status_history.length > 1 && (
+                                <button onClick={() => setConfirmModal({ title:`Histórico de Status (${sp.ortho_status_history.length})`, message: sp.ortho_status_history.slice().reverse().map(h => `${formatDate(h.changed_at)} — ${h.old_status || "Nenhum"} → ${h.new_status || "Removido"} — por ${h.changed_by}${h.reason ? ` (${h.reason})` : ""}`).join("\n"), confirmLabel:"Fechar", onConfirm:() => {} })} style={{ background:"none", border:"none", color:"#7C3AED", fontSize:12, fontWeight:600, cursor:"pointer", padding:"4px 0", textDecoration:"underline" }}>
+                                  Ver histórico ({sp.ortho_status_history.length})
+                                </button>
+                              )}
+                            </div>
                           </div>
+                          {isAdmin && (
+                            <div style={{ position:"relative" }}>
+                              <button onClick={() => setShowEncounterMenu(showEncounterMenu === "ortho-card" ? null : "ortho-card")} style={{ background:"none", border:"1px solid var(--color-border)", borderRadius:"var(--radius-sm)", width:36, height:36, cursor:"pointer", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center", color:"var(--color-text-muted)" }} aria-label="Ações do status ortodontia">⋯</button>
+                              <ActionMenu open={showEncounterMenu === "ortho-card"} onClose={() => setShowEncounterMenu(null)} anchorRight items={[
+                                { icon:"🗑️", label:"Remover Ortodontia", danger:true, onClick:() => setConfirmModal({ title:"Remover Ortodontia", message:"Remover classificação de Ortodontia deste paciente? Isso não apaga os orçamentos, apenas remove o status ortodôntico.", danger:true, confirmLabel:"Sim, remover", onConfirm:() => removeOrthoClassification(sp.id) }) }
+                              ]} />
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {rec.nextAppointment && <div style={{ fontSize:12, color:"#0EA5E9", marginTop:8, fontWeight:600 }}>Próxima consulta: {formatDate(rec.nextAppointment+"T12:00:00")}</div>}
-                      {(rec.signatureUrl || rec.signature) ? (
-                        <div style={{ marginTop:10, paddingTop:10, borderTop:"1px dashed #E2E8F0", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                          <span style={{ fontSize:12, color:"#10B981", fontWeight:600 }}>Assinado</span>
-                          <button onClick={() => setViewingSignature(rec.signatureUrl || rec.signature)} style={{ background:"#F0FDF4", border:"1px solid #BBF7D0", borderRadius:6, padding:"4px 10px", fontSize:11, color:"#16A34A", cursor:"pointer", fontWeight:600 }}>Ver assinatura</button>
+                      </div>
+                    )}
+
+                    {/* Record filter segmented control */}
+                    <div style={{ display:"flex", gap:0, marginBottom:"var(--space-3)", background:"var(--color-surface)", borderRadius:"var(--radius-sm)", border:"1px solid var(--color-border)", overflow:"hidden" }}>
+                      <button onClick={() => setPatientRecordFilter("orto")} style={{ flex:1, padding:"10px 12px", border:"none", background: patientRecordFilter==="orto" ? "var(--color-primary)" : "transparent", color: patientRecordFilter==="orto" ? "#fff" : "var(--color-text-secondary)", fontSize:13, fontWeight:600, cursor:"pointer", minHeight:44, transition:"all 0.15s" }} aria-label="Filtrar por Ortodontia">
+                        Ortodontia ({orthoRecs.length})
+                      </button>
+                      <button onClick={() => setPatientRecordFilter("geral")} style={{ flex:1, padding:"10px 12px", border:"none", borderLeft:"1px solid var(--color-border)", background: patientRecordFilter==="geral" ? "var(--color-success)" : "transparent", color: patientRecordFilter==="geral" ? "#fff" : "var(--color-text-secondary)", fontSize:13, fontWeight:600, cursor:"pointer", minHeight:44, transition:"all 0.15s" }} aria-label="Filtrar por Clínico">
+                        Clínico/Outros ({geralRecs.length})
+                      </button>
+                    </div>
+
+                    {/* Encounter Timeline */}
+                    {(() => {
+                      const recs = patientRecordFilter === "orto" ? orthoRecs : geralRecs;
+                      if (recs.length === 0) return (
+                        <div style={{ textAlign:"center", padding:"40px 20px", color:"var(--color-text-muted)", background:"#fff", borderRadius:"var(--radius)", border:"1px solid var(--color-border)" }}>
+                          <div style={{ fontSize:32, marginBottom:8 }}>{patientRecordFilter === "orto" ? "🦷" : "📋"}</div>
+                          <div style={{ fontSize:13 }}>Nenhum atendimento de {patientRecordFilter === "orto" ? "ortodontia" : "clínico geral"} registrado</div>
+                        </div>
+                      );
+                      return (
+                        <div className="encounter-timeline">
+                          {recs.map(rec => {
+                            const spec = SPECIALTIES[rec.specialty];
+                            const isNotesExpanded = expandedNotes[rec.id];
+                            const notesPreview = rec.notes && rec.notes.length > 100 && !isNotesExpanded ? rec.notes.substring(0, 100) + "…" : rec.notes;
+                            return (
+                              <div key={rec.id} className="encounter-card">
+                                <div style={{ background:"#fff", border:"1px solid var(--color-border)", borderRadius:"var(--radius)", padding:"var(--space-3)", boxShadow:"var(--shadow-sm)" }}>
+                                  {/* Card Header */}
+                                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                                    <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                                      <span style={{ fontSize:13, fontWeight:700, color:"var(--color-text)" }}>{formatDate(rec.date+"T12:00:00")}</span>
+                                      <span style={{ fontSize:11, color:"var(--color-text-muted)" }}>por {getUserName(rec.dentista_atendente_id)}</span>
+                                      {rec.atendimento_fora_da_responsabilidade && <span style={{ background:"#FEF3C7", color:"#D97706", padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:700 }}>Fora da resp.</span>}
+                                    </div>
+                                    <div style={{ position:"relative" }}>
+                                      <button onClick={() => setShowEncounterMenu(showEncounterMenu === rec.id ? null : rec.id)} style={{ background:"none", border:"1px solid var(--color-border)", borderRadius:"var(--radius-sm)", width:32, height:32, cursor:"pointer", fontSize:13, display:"flex", alignItems:"center", justifyContent:"center", color:"var(--color-text-muted)" }} aria-label="Ações do atendimento">⋯</button>
+                                      <ActionMenu open={showEncounterMenu === rec.id} onClose={() => setShowEncounterMenu(null)} anchorRight items={[
+                                        { icon:"🗑️", label:"Excluir atendimento", danger:true, onClick:() => setConfirmModal({ title:"Excluir atendimento", message:`Excluir o atendimento de ${formatDate(rec.date+"T12:00:00")}? Esta ação é irreversível.`, danger:true, confirmLabel:"Sim, excluir", onConfirm:() => deleteRecord(rec.id) }) }
+                                      ]} />
+                                    </div>
+                                  </div>
+                                  {/* Procedures as chips */}
+                                  {rec.procedures && rec.procedures.length > 0 && (
+                                    <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:8 }}>
+                                      {rec.procedures.map(pr => <Badge key={pr} text={pr} color={spec?.color || "#64748B"} />)}
+                                    </div>
+                                  )}
+                                  {/* Wire info as small chips */}
+                                  {rec.wireInfo && (rec.wireInfo.upper || rec.wireInfo.lower) && (
+                                    <div style={{ marginBottom:8 }}>
+                                      {rec.wireInfo.upper && (rec.wireInfo.upper.material || rec.wireInfo.upper.format || rec.wireInfo.upper.gauge) && (
+                                        <div style={{ display:"flex", gap:4, flexWrap:"wrap", alignItems:"center", marginBottom:4 }}>
+                                          <span style={{ fontSize:11, color:"#0369A1", fontWeight:600 }}>Superior:</span>
+                                          {rec.wireInfo.upper.material && <span style={{ fontSize:10, background:"#EFF6FF", color:"#0369A1", padding:"2px 8px", borderRadius:20, fontWeight:600 }}>{rec.wireInfo.upper.material}</span>}
+                                          {rec.wireInfo.upper.format && <span style={{ fontSize:10, background:"#EFF6FF", color:"#0369A1", padding:"2px 8px", borderRadius:20, fontWeight:600 }}>{rec.wireInfo.upper.format}</span>}
+                                          {rec.wireInfo.upper.gauge && <span style={{ fontSize:10, background:"#EFF6FF", color:"#0369A1", padding:"2px 8px", borderRadius:20, fontWeight:600 }}>{rec.wireInfo.upper.gauge}</span>}
+                                        </div>
+                                      )}
+                                      {rec.wireInfo.lower && (rec.wireInfo.lower.material || rec.wireInfo.lower.format || rec.wireInfo.lower.gauge) && (
+                                        <div style={{ display:"flex", gap:4, flexWrap:"wrap", alignItems:"center" }}>
+                                          <span style={{ fontSize:11, color:"#0369A1", fontWeight:600 }}>Inferior:</span>
+                                          {rec.wireInfo.lower.material && <span style={{ fontSize:10, background:"#EFF6FF", color:"#0369A1", padding:"2px 8px", borderRadius:20, fontWeight:600 }}>{rec.wireInfo.lower.material}</span>}
+                                          {rec.wireInfo.lower.format && <span style={{ fontSize:10, background:"#EFF6FF", color:"#0369A1", padding:"2px 8px", borderRadius:20, fontWeight:600 }}>{rec.wireInfo.lower.format}</span>}
+                                          {rec.wireInfo.lower.gauge && <span style={{ fontSize:10, background:"#EFF6FF", color:"#0369A1", padding:"2px 8px", borderRadius:20, fontWeight:600 }}>{rec.wireInfo.lower.gauge}</span>}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  {/* Teeth */}
+                                  {rec.teeth?.length > 0 && <div style={{ fontSize:11, color:"var(--color-text-secondary)", marginBottom:6 }}>Dentes: {rec.teeth.sort((a,b)=>a-b).join(", ")}</div>}
+                                  {/* Notes expandable */}
+                                  {rec.notes && (
+                                    <div style={{ fontSize:12, color:"#475569", padding:"8px 10px", background:"var(--color-surface)", borderRadius:"var(--radius-sm)", borderLeft:`3px solid ${spec?.color||"#CBD5E1"}`, marginBottom:8, cursor: rec.notes.length > 100 ? "pointer" : "default" }}
+                                      onClick={() => rec.notes.length > 100 && setExpandedNotes(prev => ({ ...prev, [rec.id]: !prev[rec.id] }))}>
+                                      {notesPreview}
+                                      {rec.notes.length > 100 && <span style={{ color:"var(--color-primary)", fontSize:11, fontWeight:600, marginLeft:4 }}>{isNotesExpanded ? "ver menos" : "ver mais"}</span>}
+                                    </div>
+                                  )}
+                                  {/* Photos horizontal scroll */}
+                                  {rec.photos?.length > 0 && (
+                                    <div style={{ marginBottom:8 }}>
+                                      <div style={{ display:"flex", gap:6, overflowX:"auto", paddingBottom:4, WebkitOverflowScrolling:"touch" }}>
+                                        {rec.photos.map(ph => (
+                                          <div key={ph.id} style={{ width:52, height:52, borderRadius:8, overflow:"hidden", border:"1px solid var(--color-border)", cursor:"pointer", flexShrink:0 }}>
+                                            {ph.url ? (
+                                              <img src={ph.url} alt={ph.name} onClick={() => setViewingPhoto(ph.url)} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                                            ) : (
+                                              <FileThumb fileId={ph.id} cache={fileCache} loadFn={loadFile} type={ph.type || "image/jpeg"} name={ph.name}
+                                                onClick={async () => { const d = fileCache[ph.id] || await FileDB.get(ph.id); if (d) setViewingPhoto(d); }}
+                                                style={{ borderRadius:8 }} />
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {/* Footer */}
+                                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6, paddingTop:8, borderTop:"1px solid var(--color-border)" }}>
+                                    <div>
+                                      {rec.nextAppointment && <span style={{ fontSize:11, color:"var(--color-primary)", fontWeight:600 }}>Próx: {formatDate(rec.nextAppointment+"T12:00:00")}</span>}
+                                    </div>
+                                    <div>
+                                      {(rec.signatureUrl || rec.signature) ? (
+                                        <button onClick={() => setViewingSignature(rec.signatureUrl || rec.signature)} style={{ background:"#F0FDF4", border:"1px solid #BBF7D0", borderRadius:20, padding:"4px 10px", fontSize:10, color:"#16A34A", cursor:"pointer", fontWeight:600, minHeight:28 }} aria-label="Ver assinatura">Assinado — ver</button>
+                                      ) : (
+                                        <span style={{ fontSize:10, color:"var(--color-warning)", fontWeight:600 }}>Sem assinatura</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* ─── TAB: ANAMNESE ─── */}
+                {patientTab === "anamnese" && (
+                  <div>
+                    <div style={{ ...cardStyle }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"var(--space-3)" }}>
+                        <div style={{ fontSize:15, fontWeight:700, color:"var(--color-text)" }}>Anamnese Clínica</div>
+                        <button onClick={() => { setAnamnesisForm({...defaultAnamnesis, ...sp.anamnesis}); setShowAnamnesis(true); setEditingAnamnesis(false); }} style={{ background:"var(--color-primary)", color:"#fff", border:"none", borderRadius:"var(--radius-sm)", padding:"8px 16px", fontSize:12, fontWeight:600, cursor:"pointer", minHeight:36 }} aria-label="Abrir Anamnese">
+                          {sp.anamnesis && Object.keys(sp.anamnesis).length > 0 ? "Ver / Editar" : "Preencher"}
+                        </button>
+                      </div>
+                      {sp.anamnesis && Object.keys(sp.anamnesis).length > 0 ? (
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                          {sp.anamnesis.alergias && <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}><strong>Alergias:</strong> {sp.anamnesis.alergias}</div>}
+                          {sp.anamnesis.medicamentos && <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}><strong>Medicamentos:</strong> {sp.anamnesis.medicamentos}</div>}
+                          {sp.anamnesis.doencas && <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}><strong>Doenças:</strong> {sp.anamnesis.doencas}</div>}
+                          {sp.anamnesis.cirurgias && <div style={{ fontSize:12, color:"var(--color-text-secondary)" }}><strong>Cirurgias:</strong> {sp.anamnesis.cirurgias}</div>}
                         </div>
                       ) : (
-                        <div style={{ marginTop:8, fontSize:11, color:"#F59E0B", fontWeight:600 }}>Sem assinatura</div>
+                        <div style={{ textAlign:"center", padding:"20px 0", color:"var(--color-text-muted)", fontSize:13 }}>Anamnese ainda não preenchida</div>
                       )}
                     </div>
-                  );
-                });
-              })()}
+                  </div>
+                )}
+
+                {/* ─── TAB: ORÇAMENTO ─── */}
+                {patientTab === "orcamento" && (
+                  <div>
+                    <div style={{ ...cardStyle }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"var(--space-3)" }}>
+                        <div style={{ fontSize:15, fontWeight:700, color:"var(--color-text)" }}>Orçamentos</div>
+                        <button onClick={() => { setOrcamentoView("list"); setShowOrcamentos(true); }} style={{ background:"var(--color-primary)", color:"#fff", border:"none", borderRadius:"var(--radius-sm)", padding:"8px 16px", fontSize:12, fontWeight:600, cursor:"pointer", minHeight:36 }} aria-label="Gerenciar Orçamentos">
+                          Gerenciar
+                        </button>
+                      </div>
+                      {(() => {
+                        const budgets = loadBudgets(sp.id);
+                        if (budgets.length === 0) return <div style={{ textAlign:"center", padding:"20px 0", color:"var(--color-text-muted)", fontSize:13 }}>Nenhum orçamento cadastrado</div>;
+                        return (
+                          <div>
+                            {budgets.slice(0, 3).map(b => (
+                              <div key={b.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:"1px solid var(--color-border)" }}>
+                                <div>
+                                  <div style={{ fontSize:13, fontWeight:600, color:"var(--color-text)" }}>R$ {(b.items || []).reduce((s, it) => s + (parseFloat(it.line_total) || 0), 0).toFixed(2)}</div>
+                                  <div style={{ fontSize:11, color:"var(--color-text-muted)" }}>{b.items?.length || 0} itens · {formatDate(b.budget_date+"T12:00:00")}</div>
+                                </div>
+                                <span style={{ fontSize:10, fontWeight:700, padding:"3px 10px", borderRadius:20,
+                                  background: b.status === "aprovado" ? "#F0FDF4" : b.status === "pendente" ? "#FFFBEB" : "#F8FAFC",
+                                  color: b.status === "aprovado" ? "#16A34A" : b.status === "pendente" ? "#D97706" : "#64748B",
+                                  border: `1px solid ${b.status === "aprovado" ? "#BBF7D0" : b.status === "pendente" ? "#FDE68A" : "#E2E8F0"}`
+                                }}>{b.status === "aprovado" ? "Aprovado" : b.status === "pendente" ? "Pendente" : "Rascunho"}</span>
+                              </div>
+                            ))}
+                            {budgets.length > 3 && <div style={{ fontSize:12, color:"var(--color-primary)", fontWeight:600, marginTop:8, cursor:"pointer" }} onClick={() => { setOrcamentoView("list"); setShowOrcamentos(true); }}>Ver todos ({budgets.length})</div>}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* ─── TAB: FINANCEIRO ─── */}
+                {patientTab === "financeiro" && (
+                  <div>
+                    <div style={{ ...cardStyle }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"var(--space-3)" }}>
+                        <div style={{ fontSize:15, fontWeight:700, color:"var(--color-text)" }}>Financeiro</div>
+                        {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && (
+                          <button onClick={() => setShowFinanceiro(true)} style={{ background:"var(--color-primary)", color:"#fff", border:"none", borderRadius:"var(--radius-sm)", padding:"8px 16px", fontSize:12, fontWeight:600, cursor:"pointer", minHeight:36 }} aria-label="Gerenciar Financeiro">
+                            Gerenciar
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"var(--space-2)", marginBottom:"var(--space-3)" }}>
+                        <div style={{ background:"#F0FDF4", borderRadius:"var(--radius-sm)", padding:"var(--space-2) var(--space-3)", border:"1px solid #BBF7D0" }}>
+                          <div style={{ fontSize:10, fontWeight:700, color:"#16A34A", textTransform:"uppercase" }}>Total pago</div>
+                          <div style={{ fontSize:16, fontWeight:800, color:"#16A34A" }}>R$ {totalPagoDetail.toFixed(2)}</div>
+                        </div>
+                        <div style={{ background: saldoDetail > 0 ? "#FEF2F2" : "#F0FDF4", borderRadius:"var(--radius-sm)", padding:"var(--space-2) var(--space-3)", border: saldoDetail > 0 ? "1px solid #FECACA" : "1px solid #BBF7D0" }}>
+                          <div style={{ fontSize:10, fontWeight:700, color: saldoDetail > 0 ? "#EF4444" : "#16A34A", textTransform:"uppercase" }}>{saldoDetail > 0 ? "Saldo devedor" : "Situação"}</div>
+                          <div style={{ fontSize:16, fontWeight:800, color: saldoDetail > 0 ? "#EF4444" : "#16A34A" }}>{saldoDetail > 0 ? `R$ ${saldoDetail.toFixed(2)}` : "Em dia"}</div>
+                        </div>
+                      </div>
+                      {sp.financeiro?.pagamentos?.length > 0 ? (
+                        <div>
+                          <div style={{ fontSize:12, fontWeight:700, color:"var(--color-text)", marginBottom:8 }}>Últimos pagamentos</div>
+                          {sp.financeiro.pagamentos.slice(0, 5).sort((a,b) => (b.data||"").localeCompare(a.data||"")).map(pg => (
+                            <div key={pg.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderBottom:"1px solid var(--color-border)" }}>
+                              <div>
+                                <span style={{ fontSize:13, fontWeight:700, color:"var(--color-text)" }}>R$ {parseFloat(pg.valor).toFixed(2)}</span>
+                                <span style={{ fontSize:10, color:"var(--color-text-muted)", marginLeft:8 }}>{pg.forma_pagamento === "avista" ? "À vista" : "Parcelado"}</span>
+                              </div>
+                              <span style={{ fontSize:11, color:"var(--color-text-muted)" }}>{pg.data ? formatDate(pg.data+"T12:00:00") : ""}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ textAlign:"center", padding:"12px 0", color:"var(--color-text-muted)", fontSize:13 }}>Nenhum pagamento registrado</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* ─── TAB: ARQUIVOS ─── */}
+                {patientTab === "arquivos" && (
+                  <div>
+                    <div style={{ ...cardStyle }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"var(--space-3)", flexWrap:"wrap", gap:8 }}>
+                        <div style={{ fontSize:15, fontWeight:700, color:"var(--color-text)" }}>Documentos ({(sp.documents || []).length})</div>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                            <label style={{ fontSize:11, color:"var(--color-text-muted)", fontWeight:600 }}>Data:</label>
+                            <input type="date" value={docDateFilter} onChange={e => setDocDateFilter(e.target.value)}
+                              style={{ padding:"6px 10px", borderRadius:"var(--radius-sm)", border:"1px solid var(--color-border)", fontSize:12, outline:"none", background:"var(--color-surface)", minHeight:36 }} />
+                            {docDateFilter && <button onClick={() => setDocDateFilter("")} style={{ background:"none", border:"none", color:"var(--color-text-muted)", cursor:"pointer", fontSize:14, padding:0 }} aria-label="Limpar filtro">×</button>}
+                          </div>
+                          <button onClick={() => docInputRef.current?.click()} style={{ background:"var(--color-primary)", color:"#fff", border:"none", borderRadius:"var(--radius-sm)", padding:"8px 14px", fontSize:12, fontWeight:600, cursor:"pointer", minHeight:36, whiteSpace:"nowrap" }} aria-label="Anexar documento">+ Anexar</button>
+                          <input ref={docInputRef} type="file" accept="image/*,.pdf,.docx" multiple onChange={handleDocUpload} style={{ display:"none" }} />
+                        </div>
+                      </div>
+                      {(!sp.documents || sp.documents.length === 0) ? (
+                        <div style={{ textAlign:"center", padding:"30px 20px", border:"2px dashed var(--color-border)", borderRadius:"var(--radius)", color:"var(--color-text-muted)" }}>
+                          <div style={{ fontSize:28, marginBottom:8 }}>📁</div>
+                          <div style={{ fontSize:13 }}>Nenhum documento anexado</div>
+                          <div style={{ fontSize:11, marginTop:4 }}>Clique em "+ Anexar" para adicionar</div>
+                        </div>
+                      ) : (
+                        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(120px, 1fr))", gap:10 }}>
+                          {sp.documents
+                            .filter(doc => !docDateFilter || (doc.uploadedAt && doc.uploadedAt.startsWith(docDateFilter)))
+                            .map(doc => (
+                            <div key={doc.id} style={{ border:"1px solid var(--color-border)", borderRadius:"var(--radius-sm)", padding:8, position:"relative" }}>
+                              <div style={{ width:"100%", height:72, borderRadius:6, overflow:"hidden", marginBottom:6 }}>
+                                <FileThumb fileId={doc.id} cache={fileCache} loadFn={loadFile} type={doc.type} name={doc.name}
+                                  onClick={async () => { const d = fileCache[doc.id] || await FileDB.get(doc.id); if (d) { if (doc.type?.startsWith("image/")) setViewingPhoto(d); else { const a=document.createElement("a"); a.href=d; a.download=doc.name; a.click(); } } }}
+                                  style={{ borderRadius:6 }} />
+                              </div>
+                              <div style={{ fontSize:10, color:"var(--color-text-secondary)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={doc.name}>{doc.name}</div>
+                              <div style={{ fontSize:9, color:"var(--color-text-muted)" }}>{formatSize(doc.size)}</div>
+                              {doc.uploadedAt && <div style={{ fontSize:9, color:"var(--color-text-muted)" }}>{formatDate(doc.uploadedAt)}</div>}
+                              {isAdmin && (
+                                <button onClick={() => setConfirmModal({ title:"Excluir documento", message:`Excluir "${doc.name}"?`, danger:true, confirmLabel:"Excluir", onConfirm:() => deleteDoc(doc.id) })} style={{ position:"absolute", top:4, right:4, background:"rgba(239,68,68,0.9)", border:"none", borderRadius:"50%", width:20, height:20, color:"#fff", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }} aria-label="Excluir documento">×</button>
+                              )}
+                            </div>
+                          ))}
+                          {sp.documents.length > 0 && docDateFilter && sp.documents.filter(doc => doc.uploadedAt && doc.uploadedAt.startsWith(docDateFilter)).length === 0 && (
+                            <div style={{ fontSize:12, color:"var(--color-text-muted)", padding:16, gridColumn:"1 / -1" }}>Nenhum documento nesta data.</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── FAB contextual ── */}
+              {patientTab === "atendimentos" && (
+                <button onClick={() => setShowNewRecord(true)} style={{ position:"fixed", bottom:24, right:24, zIndex:90, width:56, height:56, borderRadius:16, background:"var(--color-primary)", color:"#fff", border:"none", fontSize:24, fontWeight:300, cursor:"pointer", boxShadow:"0 4px 20px rgba(14,165,233,0.35)", display:"flex", alignItems:"center", justifyContent:"center", transition:"transform 0.2s, box-shadow 0.2s" }}
+                  onMouseEnter={e => { e.currentTarget.style.transform="scale(1.08)"; e.currentTarget.style.boxShadow="0 6px 28px rgba(14,165,233,0.5)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform="scale(1)"; e.currentTarget.style.boxShadow="0 4px 20px rgba(14,165,233,0.35)"; }}
+                  aria-label="Novo Atendimento" title="Novo Atendimento">
+                  +
+                </button>
+              )}
+
+              {/* ── ConfirmModal ── */}
+              <ConfirmModal config={confirmModal} onClose={() => setConfirmModal(null)} />
             </div>
-          )}
+            );
+          })()}
 
           {/* ═══ USER MANAGEMENT ═══ */}
           {view === "users" && isAdmin && (
