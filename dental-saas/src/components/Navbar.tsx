@@ -9,6 +9,7 @@ import {
   UserRound,
   ClipboardList,
   DollarSign,
+  FileText,
   LogOut,
   Menu,
   X,
@@ -20,6 +21,7 @@ const links = [
   { href: "/professionals", label: "Profissionais", icon: Users },
   { href: "/patients", label: "Pacientes", icon: UserRound },
   { href: "/waitlist", label: "Fila de Espera", icon: ClipboardList },
+  { href: "/budgets", label: "Orçamentos", icon: FileText },
   { href: "/financial", label: "Financeiro", icon: DollarSign },
 ];
 

@@ -215,3 +215,50 @@ export interface RecurringRule {
   active: boolean;
   created_at: string;
 }
+
+// ─── Budgets Module ──────────────────────────────────────────
+
+export type BudgetType = "ORTHO" | "SPECIALTY";
+export type OrthoType = "TRADICIONAL" | "INVISALIGN";
+export type BudgetStatus = "pending" | "approved" | "cancelled";
+
+export interface BudgetUpsell {
+  id: string;
+  title: string;
+  type: "mandatory" | "optional";
+  monthlyDelta: number;
+  oneTimeDelta: number;
+}
+
+export interface BudgetItem {
+  id: string;
+  procedure: string;
+  benefit: string;
+  entry: number;
+  qty: number;
+  total: number;
+  totalCash: number;
+}
+
+export interface Budget {
+  id: string;
+  clinic_id: string;
+  patient_id: string | null;
+  type: BudgetType;
+  ortho_type: OrthoType | null;
+  model: string;
+  monthly_value: number;
+  installments: number;
+  total: number;
+  cash_value: number;
+  upsells: BudgetUpsell[];
+  items: BudgetItem[];
+  due_day: number | null;
+  is_cash: boolean;
+  is_plan_complement: boolean;
+  notes: string;
+  status: BudgetStatus;
+  created_by: string | null;
+  created_at: string;
+  patient?: Patient | null;
+}
