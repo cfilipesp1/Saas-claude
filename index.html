@@ -653,6 +653,40 @@
         loadPatients();
       }, [currentUser]);
       
+      // ── Load Clinic Users from Supabase ──
+      useEffect(() => {
+        const loadClinicUsers = async () => {
+          if (!currentUser?.clinic_id) return;
+          
+          try {
+            const { data: profiles, error } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('clinic_id', currentUser.clinic_id)
+              .eq('active', true);
+            
+            if (!error && profiles && profiles.length > 0) {
+              const localUsers = profiles.map(p => ({
+                id: p.user_id,
+                name: p.full_name,
+                login: p.user_id,
+                role: ENUM_TO_ROLE[p.role] || 'recepcao',
+                specialty: p.specialty || '',
+                active: p.active,
+                clinic_id: p.clinic_id,
+                createdAt: p.created_at
+              }));
+              
+              setUsers(localUsers);
+            }
+          } catch (err) {
+            console.error('Erro ao carregar usuários da clínica:', err);
+          }
+        };
+        
+        loadClinicUsers();
+      }, [currentUser?.clinic_id]);
+      
       // ── Setup Realtime Listeners ──
       useEffect(() => {
         if (currentUser && currentUser.clinic_id) {
