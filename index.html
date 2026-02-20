@@ -656,14 +656,21 @@
       // ── Load Clinic Users from Supabase ──
       useEffect(() => {
         const loadClinicUsers = async () => {
-          if (!currentUser?.clinic_id) return;
+          console.log('[DEBUG] loadClinicUsers chamado', { currentUser });
+          if (!currentUser?.clinic_id) {
+            console.log('[DEBUG] Sem clinic_id, retornando');
+            return;
+          }
           
           try {
+            console.log('[DEBUG] Buscando perfis da clínica:', currentUser.clinic_id);
             const { data: profiles, error } = await supabase
               .from('profiles')
               .select('*')
               .eq('clinic_id', currentUser.clinic_id)
               .eq('active', true);
+            
+            console.log('[DEBUG] Resultado da busca:', { profiles, error });
             
             if (!error && profiles && profiles.length > 0) {
               const localUsers = profiles.map(p => ({
@@ -677,7 +684,10 @@
                 createdAt: p.created_at
               }));
               
+              console.log('[DEBUG] Usuários carregados:', localUsers);
               setUsers(localUsers);
+            } else {
+              console.log('[DEBUG] Nenhum perfil encontrado ou erro:', error);
             }
           } catch (err) {
             console.error('Erro ao carregar usuários da clínica:', err);
