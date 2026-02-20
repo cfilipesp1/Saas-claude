@@ -1,6 +1,6 @@
 -- =====================================================
--- TABELAS FINANCEIRAS (VERSÃO MÍNIMA - SEM RLS)
--- Sistema de Clínica Odontológica - Fase 5
+-- TABELAS FINANCEIRAS (VERSAO MINIMA - SEM RLS)
+-- Sistema de Clinica Odontologica - Fase 5
 -- =====================================================
 
 -- TABELA 1: PATIENT_BUDGETS
@@ -29,18 +29,19 @@ CREATE TABLE IF NOT EXISTS payments (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Índices
+-- Indices
 CREATE INDEX IF NOT EXISTS idx_patient_budgets_patient_id ON patient_budgets(patient_id);
 CREATE INDEX IF NOT EXISTS idx_patient_budgets_clinic_id ON patient_budgets(clinic_id);
 CREATE INDEX IF NOT EXISTS idx_payments_patient_id ON payments(patient_id);
 CREATE INDEX IF NOT EXISTS idx_payments_clinic_id ON payments(clinic_id);
 CREATE INDEX IF NOT EXISTS idx_payments_payment_date ON payments(payment_date DESC);
 
--- Trigger para updated_at
+-- Trigger para updated_at (idempotente)
+DROP TRIGGER IF EXISTS update_patient_budgets_updated_at ON patient_budgets;
 CREATE TRIGGER update_patient_budgets_updated_at
   BEFORE UPDATE ON patient_budgets
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
--- Verificação
-SELECT '✅ Tabelas criadas!' as status;
+-- Verificacao
+SELECT 'Tabelas criadas!' as status;
