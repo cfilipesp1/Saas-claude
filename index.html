@@ -1111,19 +1111,29 @@
       // ── Patient CRUD ──
       const createPatient = async () => {
         if (!npForm.name.trim()) return;
-        
+
         try {
+          // Verificar sessão ativa antes de inserir
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+            alert('Sessão expirada. Faça login novamente.');
+            setCurrentUser(null);
+            return;
+          }
+
+          const insertPayload = {
+            clinic_id: currentUser.clinic_id,
+            name: npForm.name.trim(),
+            birth_date: npForm.birthDate || null,
+            phone: npForm.phone || '',
+            email: npForm.email || '',
+            cpf: npForm.cpf || '',
+            notes: ''
+          };
+
           const { data, error } = await supabase
             .from('patients')
-            .insert({
-              clinic_id: currentUser.clinic_id,
-              name: npForm.name,
-              birth_date: npForm.birthDate || null,
-              phone: npForm.phone || '',
-              email: npForm.email || '',
-              cpf: npForm.cpf || '',
-              notes: ''
-            })
+            .insert(insertPayload)
             .select()
             .single();
 
@@ -1162,7 +1172,16 @@
           addAudit("CRIAR_PACIENTE","paciente",newPatient.id,newPatient.name, `Resp. Clínico: ${getUserName(npForm.responsavel_clinico_id)}, Resp. Orto: ${getUserName(npForm.responsavel_orto_id)}`);
         } catch (err) {
           console.error('Erro ao criar paciente:', err);
-          alert('Erro ao criar paciente. Verifique os dados e tente novamente.');
+          const msg = err?.message || err?.error_description || JSON.stringify(err);
+          if (msg.includes('row-level security') || msg.includes('policy')) {
+            alert('Erro de permissão (RLS).\n\nVerifique se as políticas de segurança e a função current_clinic_id() estão configuradas no Supabase.\n\nDetalhes: ' + msg);
+          } else if (msg.includes('clinic') || msg.includes('foreign key')) {
+            alert('Erro: clínica não encontrada no banco.\n\nVerifique se a tabela clinics possui o registro correto e se o perfil do usuário está vinculado.\n\nDetalhes: ' + msg);
+          } else if (msg.includes('null') || msg.includes('not-null')) {
+            alert('Erro: campo obrigatório não preenchido.\n\nDetalhes: ' + msg);
+          } else {
+            alert('Erro ao criar paciente:\n\n' + msg + '\n\nAbra o console do navegador (F12) para mais detalhes.');
+          }
         }
       };
 
@@ -1189,7 +1208,8 @@
           addAudit("EXCLUIR_PACIENTE","paciente",id,p.name,"");
         } catch (err) {
           console.error('Erro ao excluir paciente:', err);
-          alert('Erro ao excluir paciente. Tente novamente.');
+          const msg = err?.message || err?.error_description || JSON.stringify(err);
+          alert('Erro ao excluir paciente:\n\n' + msg);
         }
       };
 
