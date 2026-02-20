@@ -52,10 +52,13 @@ export async function createPatient(formData: FormData): Promise<{ error?: strin
 
   const { error } = await supabase.from("patients").insert({
     name: name.trim(),
+    codigo: (formData.get("codigo") as string) || "",
     phone: (formData.get("phone") as string) || "",
     email: (formData.get("email") as string) || "",
     birth_date: birthDate || null,
     address: (formData.get("address") as string) || "",
+    responsavel_clinico_id: (formData.get("responsavel_clinico_id") as string) || "",
+    responsavel_orto_id: (formData.get("responsavel_orto_id") as string) || "",
   });
 
   if (error) {
@@ -80,10 +83,13 @@ export async function updatePatient(formData: FormData): Promise<{ error?: strin
     .from("patients")
     .update({
       name: name.trim(),
+      codigo: (formData.get("codigo") as string) || "",
       phone: (formData.get("phone") as string) || "",
       email: (formData.get("email") as string) || "",
       birth_date: (formData.get("birth_date") as string) || null,
       address: (formData.get("address") as string) || "",
+      responsavel_clinico_id: (formData.get("responsavel_clinico_id") as string) || "",
+      responsavel_orto_id: (formData.get("responsavel_orto_id") as string) || "",
     })
     .eq("id", id);
 
