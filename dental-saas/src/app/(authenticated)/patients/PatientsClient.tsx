@@ -91,21 +91,15 @@ export default function PatientsClient({
         className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
       />
       <input
-        name="cpf"
-        defaultValue={defaults?.cpf}
-        placeholder="CPF"
-        className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
-      />
-      <input
         name="birth_date"
         type="date"
         defaultValue={defaults?.birth_date || ""}
         className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
       />
       <input
-        name="notes"
-        defaultValue={defaults?.notes}
-        placeholder="Observações"
+        name="address"
+        defaultValue={defaults?.address}
+        placeholder="Endereço"
         className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
       />
     </>
@@ -205,7 +199,6 @@ export default function PatientsClient({
             <tr>
               <th className="text-left px-4 py-3 font-medium text-slate-600">Nome</th>
               <th className="text-left px-4 py-3 font-medium text-slate-600">Telefone</th>
-              <th className="text-left px-4 py-3 font-medium text-slate-600 hidden sm:table-cell">CPF</th>
               <th className="text-left px-4 py-3 font-medium text-slate-600 hidden md:table-cell">Email</th>
               <th className="text-right px-4 py-3 font-medium text-slate-600">Ações</th>
             </tr>
@@ -213,7 +206,7 @@ export default function PatientsClient({
           <tbody>
             {initialData.length === 0 && (
               <tr>
-                <td colSpan={5} className="text-center py-8 text-slate-400">
+                <td colSpan={4} className="text-center py-8 text-slate-400">
                   Nenhum paciente encontrado
                 </td>
               </tr>
@@ -229,7 +222,6 @@ export default function PatientsClient({
                   </button>
                 </td>
                 <td className="px-4 py-3 text-slate-600">{p.phone || "—"}</td>
-                <td className="px-4 py-3 text-slate-600 hidden sm:table-cell">{p.cpf || "—"}</td>
                 <td className="px-4 py-3 text-slate-600 hidden md:table-cell">{p.email || "—"}</td>
                 <td className="px-4 py-3 text-right space-x-2">
                   <button

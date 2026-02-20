@@ -268,7 +268,6 @@ export default function PatientDetailClient({
               <InfoField label="Nome" value={patient.name} />
               <InfoField label="Telefone" value={patient.phone} />
               <InfoField label="Email" value={patient.email} />
-              <InfoField label="CPF" value={patient.cpf} />
               <InfoField
                 label="Data de Nascimento"
                 value={
@@ -277,7 +276,7 @@ export default function PatientDetailClient({
                     : ""
                 }
               />
-              <InfoField label="Observações" value={patient.notes} />
+              <InfoField label="Endereço" value={patient.address} />
             </div>
           ) : (
             <form
@@ -288,14 +287,13 @@ export default function PatientDetailClient({
               <FormField label="Nome *" name="name" defaultValue={patient.name} required />
               <FormField label="Telefone" name="phone" defaultValue={patient.phone} />
               <FormField label="Email" name="email" type="email" defaultValue={patient.email} />
-              <FormField label="CPF" name="cpf" defaultValue={patient.cpf} />
               <FormField
                 label="Data de Nascimento"
                 name="birth_date"
                 type="date"
                 defaultValue={patient.birth_date || ""}
               />
-              <FormField label="Observações" name="notes" defaultValue={patient.notes} />
+              <FormField label="Endereço" name="address" defaultValue={patient.address} />
               <div className="sm:col-span-2 lg:col-span-3 flex gap-3 justify-end">
                 <button
                   type="button"

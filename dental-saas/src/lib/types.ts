@@ -35,12 +35,14 @@ export interface Professional {
 export interface Patient {
   id: string;
   clinic_id: string;
+  codigo: string;
   name: string;
   phone: string;
   email: string;
-  cpf: string;
   birth_date: string | null;
-  notes: string;
+  address: string;
+  responsavel_clinico_id: string;
+  responsavel_orto_id: string;
   created_at: string;
 }
 

@@ -23,7 +23,7 @@ export async function getPatients(search?: string) {
     const sanitized = search.replace(/[%_\\,.()"']/g, "");
     if (sanitized.length > 0) {
       query = query.or(
-        `name.ilike.%${sanitized}%,phone.ilike.%${sanitized}%,cpf.ilike.%${sanitized}%,email.ilike.%${sanitized}%`
+        `name.ilike.%${sanitized}%,phone.ilike.%${sanitized}%,email.ilike.%${sanitized}%`
       );
     }
   }
@@ -41,15 +41,21 @@ export async function createPatient(formData: FormData): Promise<{ error?: strin
     return { error: "Nome é obrigatório" };
   }
 
+  // Ensure the user's clinic row exists (self-healing if signup trigger failed)
+  const { error: clinicError } = await supabase.rpc("ensure_clinic_exists");
+  if (clinicError) {
+    console.error("ensure_clinic_exists error:", clinicError);
+    return { error: "Clínica não encontrada. Tente fazer logout e login novamente." };
+  }
+
   const birthDate = (formData.get("birth_date") as string) || null;
 
   const { error } = await supabase.from("patients").insert({
     name: name.trim(),
     phone: (formData.get("phone") as string) || "",
     email: (formData.get("email") as string) || "",
-    cpf: (formData.get("cpf") as string) || "",
     birth_date: birthDate || null,
-    notes: (formData.get("notes") as string) || "",
+    address: (formData.get("address") as string) || "",
   });
 
   if (error) {
@@ -76,9 +82,8 @@ export async function updatePatient(formData: FormData): Promise<{ error?: strin
       name: name.trim(),
       phone: (formData.get("phone") as string) || "",
       email: (formData.get("email") as string) || "",
-      cpf: (formData.get("cpf") as string) || "",
       birth_date: (formData.get("birth_date") as string) || null,
-      notes: (formData.get("notes") as string) || "",
+      address: (formData.get("address") as string) || "",
     })
     .eq("id", id);
 
