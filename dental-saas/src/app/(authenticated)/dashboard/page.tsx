@@ -1,5 +1,5 @@
 import { createServerSupabase } from "@/lib/supabase/server";
-import { Users, UserRound, ClipboardList } from "lucide-react";
+import { Users, UserRound, ClipboardList, DollarSign } from "lucide-react";
 import Link from "next/link";
 
 export default async function DashboardPage() {
@@ -9,6 +9,7 @@ export default async function DashboardPage() {
     { count: profCount },
     { count: patCount },
     { count: waitCount },
+    { count: recCount },
   ] = await Promise.all([
     supabase.from("professionals").select("*", { count: "exact", head: true }),
     supabase.from("patients").select("*", { count: "exact", head: true }),
@@ -16,6 +17,10 @@ export default async function DashboardPage() {
       .from("waitlist_entries")
       .select("*", { count: "exact", head: true })
       .not("status", "in", '("DONE","CANCELLED")'),
+    supabase
+      .from("receivables")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "open"),
   ]);
 
   const cards = [
@@ -40,13 +45,20 @@ export default async function DashboardPage() {
       color: "bg-amber-50 text-amber-600",
       href: "/waitlist",
     },
+    {
+      label: "A Receber",
+      value: recCount ?? 0,
+      icon: DollarSign,
+      color: "bg-cyan-50 text-cyan-600",
+      href: "/financial/receivables",
+    },
   ];
 
   return (
     <div>
       <h2 className="text-2xl font-bold text-slate-800 mb-6">Dashboard</h2>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((c) => (
           <Link
             key={c.label}
