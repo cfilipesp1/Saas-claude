@@ -2,8 +2,10 @@ import {
   getWaitlistEntries,
   getWaitlistPatients,
   getWaitlistProfessionals,
-} from "@/actions/waitlist";
+} from "@/queries/waitlist";
 import WaitlistClient from "./WaitlistClient";
+
+export const dynamic = "force-dynamic";
 
 export default async function WaitlistPage() {
   const [entries, patients, professionals] = await Promise.all([
