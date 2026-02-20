@@ -1196,8 +1196,6 @@
       const [arrivalForm, setArrivalForm] = useState({ dentista_id: "" });
       const [showFinanceiro, setShowFinanceiro] = useState(false);
       const [financeiroForm, setFinanceiroForm] = useState({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
-      const [editingOrcamento, setEditingOrcamento] = useState(false);
-      const [tempOrcamento, setTempOrcamento] = useState("");
       // ── Orçamentos ──
       const [showOrcamentos, setShowOrcamentos] = useState(false);
       const [orcamentoView, setOrcamentoView] = useState("list"); // list | form | print
@@ -1631,13 +1629,27 @@
           budgets.unshift({ ...budget, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
         }
         saveLocalData('budgets', patientId, budgets);
+        syncApprovedBudgetsTotal(patientId, budgets);
         return budget;
+      };
+
+      const syncApprovedBudgetsTotal = async (patientId, budgetsOverride) => {
+        const budgets = budgetsOverride || loadBudgets(patientId);
+        const approvedTotal = budgets
+          .filter(b => b.status === "aprovado")
+          .reduce((sum, b) => sum + (parseFloat(b.total) || 0), 0);
+        try {
+          await createOrUpdateBudgetSupabase(patientId, approvedTotal);
+        } catch (e) { console.error('Erro sync orçamento:', e); }
+        setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, orcamento_total: approvedTotal}} : p));
+        setSelectedPatient(prev => prev && prev.id === patientId ? {...prev, financeiro: {...prev.financeiro, orcamento_total: approvedTotal}} : prev);
       };
 
       const deleteBudget = (patientId, budgetId) => {
         const budgets = loadBudgets(patientId);
         const filtered = budgets.filter(b => b.id !== budgetId);
         saveLocalData('budgets', patientId, filtered);
+        syncApprovedBudgetsTotal(patientId, filtered);
       };
 
       const duplicateBudget = (patientId, budgetId) => {
@@ -2262,24 +2274,6 @@
       };
 
       // ── Financeiro ──
-      const saveOrcamento = async (patientId, valor) => {
-        try {
-          // Salvar no Supabase
-          await createOrUpdateBudgetSupabase(patientId, valor);
-          
-          // Atualizar estado local
-          const parsedValor = parseFloat(valor) || 0;
-          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, orcamento_total: parsedValor}} : p));
-          setSelectedPatient(prev => prev ? {...prev, financeiro: {...prev.financeiro, orcamento_total: parsedValor}} : prev);
-          addAudit("ATUALIZAR_ORCAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Orçamento: R$ ${parseFloat(valor).toFixed(2)}`);
-          setEditingOrcamento(false);
-          setTempOrcamento("");
-        } catch (err) {
-          console.error('Erro ao salvar orçamento:', err);
-          const msgOrc = err?.message || err?.error_description || JSON.stringify(err);
-          alert('Erro ao salvar orçamento:\n\n' + msgOrc);
-        }
-      };
 
       const addPagamento = async (patientId) => {
         if (!financeiroForm.valor || parseFloat(financeiroForm.valor) <= 0) return;
@@ -3385,29 +3379,38 @@
           </Modal>
 
           {/* ═══ FINANCEIRO MODAL ═══ */}
-          <Modal isOpen={showFinanceiro} onClose={() => { setShowFinanceiro(false); setEditingOrcamento(false); setTempOrcamento(""); setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" }); }} title="Financeiro - Controle de Pagamentos" wide>
+          <Modal isOpen={showFinanceiro} onClose={() => { setShowFinanceiro(false); setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" }); }} title="Financeiro - Controle de Pagamentos" wide>
             {selectedPatient && (
               <div>
-                {/* Orçamento Total */}
-                <div style={{ ...cardStyle, marginBottom:16, background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderColor:"#3B82F6" }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-                    <div style={{ fontSize:16, fontWeight:700, color:"#1E40AF" }}>💵 Orçamento Total</div>
-                    {!editingOrcamento && (
-                      <button onClick={() => { setTempOrcamento(selectedPatient.financeiro.orcamento_total.toString()); setEditingOrcamento(true); }} style={{...btnSecondary, fontSize:12, padding:"4px 12px"}}>✏️ Editar</button>
-                    )}
-                  </div>
-                  {editingOrcamento ? (
-                    <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-                      <Input label="" value={tempOrcamento} onChange={e => setTempOrcamento(e.target.value)} placeholder="0.00" type="number" step="0.01" />
-                      <button onClick={() => saveOrcamento(selectedPatient.id, tempOrcamento)} style={{...btnPrimary, fontSize:13, padding:"8px 16px", whiteSpace:"nowrap"}}>✓ Salvar</button>
-                      <button onClick={() => { setEditingOrcamento(false); setTempOrcamento(""); }} style={{...btnSecondary, fontSize:13, padding:"8px 16px"}}>×</button>
+                {/* Orçamento Total - Sincronizado automaticamente dos orçamentos aprovados */}
+                {(() => {
+                  const approvedBudgets = loadBudgets(selectedPatient.id).filter(b => b.status === "aprovado");
+                  const orcTotal = approvedBudgets.reduce((sum, b) => sum + (parseFloat(b.total) || 0), 0);
+                  return (
+                    <div style={{ ...cardStyle, marginBottom:16, background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderColor:"#3B82F6" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                        <div style={{ fontSize:16, fontWeight:700, color:"#1E40AF" }}>💵 Orçamento Total</div>
+                        <span style={{ fontSize:11, color:"#64748B", fontStyle:"italic" }}>Soma dos orçamentos aprovados</span>
+                      </div>
+                      <div style={{ fontSize:28, fontWeight:800, color:"#1E40AF", marginBottom: approvedBudgets.length > 0 ? 10 : 0 }}>
+                        R$ {orcTotal.toFixed(2).replace(".", ",")}
+                      </div>
+                      {approvedBudgets.length > 0 && (
+                        <div style={{ borderTop:"1px solid #BFDBFE", paddingTop:8 }}>
+                          {approvedBudgets.map(ab => (
+                            <div key={ab.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:12, color:"#1E40AF", padding:"3px 0" }}>
+                              <span>{formatDate(ab.budget_date)} - {ab.professional_name || "—"} ({(ab.items||[]).length} itens)</span>
+                              <span style={{ fontWeight:700 }}>R$ {(ab.total||0).toFixed(2).replace(".",",")}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {approvedBudgets.length === 0 && (
+                        <div style={{ fontSize:12, color:"#94A3B8", marginTop:4 }}>Nenhum orçamento aprovado. Aprove orçamentos na aba de Orçamentos.</div>
+                      )}
                     </div>
-                  ) : (
-                    <div style={{ fontSize:28, fontWeight:800, color:"#1E40AF" }}>
-                      R$ {(selectedPatient.financeiro.orcamento_total || 0).toFixed(2).replace(".", ",")}
-                    </div>
-                  )}
-                </div>
+                  );
+                })()}
 
                 {/* Resumo Financeiro */}
                 <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:12, marginBottom:16 }}>
