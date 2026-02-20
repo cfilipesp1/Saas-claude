@@ -14,6 +14,8 @@ const errorMessages: Record<string, string> = {
   "Too many requests":
     "Muitas tentativas. Aguarde um momento e tente novamente.",
   auth: "Erro na confirmação de email. Tente novamente.",
+  no_profile:
+    "Perfil não encontrado. Sua conta existe mas o perfil não foi criado. Contacte o administrador da clínica.",
 };
 
 function translateError(msg: string): string {

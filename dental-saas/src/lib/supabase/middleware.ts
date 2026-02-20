@@ -42,8 +42,11 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Redirect authenticated users away from /login and /signup
+  // BUT allow them to stay on /login if they have no profile (error=no_profile)
+  // to avoid infinite redirect: middleware→/dashboard → layout(no profile)→/login → middleware→/dashboard...
   if (
     user &&
+    !request.nextUrl.searchParams.has("error") &&
     (request.nextUrl.pathname.startsWith("/login") ||
       request.nextUrl.pathname.startsWith("/signup"))
   ) {
