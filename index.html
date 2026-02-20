@@ -23,6 +23,22 @@
     .tipo-card { padding: 16px 24px; border-radius: 12px; border: 2px solid #E2E8F0; cursor: pointer; text-align: center; transition: all 0.2s; flex: 1; }
     .tipo-card:hover { border-color: #94A3B8; }
     .tipo-card.selected { border-color: currentColor; }
+    
+    /* Animações Realtime */
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes slideInRight {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
   </style>
 </head>
 <body>
@@ -420,12 +436,16 @@
       const [loginError, setLoginError] = useState("");
 
       // ── Data State ──
-      const [patients, setPatients] = useState(() => {
-        try { return (JSON.parse(localStorage.getItem("dental_patients")) || []).map(migratePatient); } catch { return []; }
-      });
+      const [patients, setPatients] = useState([]);
+      const [loadingPatients, setLoadingPatients] = useState(true);
       const [auditLogs, setAuditLogs] = useState(() => {
         try { return JSON.parse(localStorage.getItem("dental_audit")) || []; } catch { return []; }
       });
+      
+      // ── Realtime State ──
+      const [syncing, setSyncing] = useState(false);
+      const [notifications, setNotifications] = useState([]);
+      const [realtimeChannels, setRealtimeChannels] = useState([]);
 
       // ── Navigation ──
       const [view, setView] = useState("list");
@@ -497,20 +517,194 @@
               };
               setCurrentUser(localUser);
             }
+          } else {
+            setLoadingPatients(false);
           }
         };
         restoreSession();
       }, []);
 
+      // ── Migração de Dados Antigos ──
+      const migrateOldDataToSupabase = async () => {
+        try {
+          const oldPatients = JSON.parse(localStorage.getItem("dental_patients")) || [];
+          if (oldPatients.length === 0) return { migrated: 0, errors: 0 };
+          
+          let migrated = 0;
+          let errors = 0;
+          
+          for (const oldPatient of oldPatients) {
+            try {
+              // Inserir paciente no Supabase
+              const { data, error } = await supabase
+                .from('patients')
+                .insert({
+                  clinic_id: currentUser.clinic_id,
+                  codigo: oldPatient.codigo || null,
+                  name: oldPatient.name,
+                  birth_date: oldPatient.birthDate || null,
+                  phone: oldPatient.phone || null,
+                  email: oldPatient.email || null,
+                  cpf: oldPatient.cpf || null,
+                  address: oldPatient.address || null,
+                  responsavel_clinico_id: oldPatient.responsavel_clinico_id || null,
+                  responsavel_orto_id: oldPatient.responsavel_orto_id || null
+                })
+                .select()
+                .single();
+              
+              if (error) throw error;
+              
+              // Salvar dados relacionados no LocalStorage com novo ID
+              if (oldPatient.anamnesis) saveLocalData('anamnesis', data.id, oldPatient.anamnesis);
+              if (oldPatient.records) saveLocalData('records', data.id, oldPatient.records);
+              if (oldPatient.documents) saveLocalData('documents', data.id, oldPatient.documents);
+              if (oldPatient.responsavelHistory) saveLocalData('responsavelHistory', data.id, oldPatient.responsavelHistory);
+              if (oldPatient.arrivalControl) saveLocalData('arrivalControl', data.id, oldPatient.arrivalControl);
+              if (oldPatient.financeiro) saveLocalData('financeiro', data.id, oldPatient.financeiro);
+              
+              migrated++;
+            } catch (err) {
+              console.error(`Erro ao migrar paciente ${oldPatient.name}:`, err);
+              errors++;
+            }
+          }
+          
+          // Limpar dados antigos após migração bem-sucedida
+          if (migrated > 0 && errors === 0) {
+            localStorage.removeItem("dental_patients");
+          }
+          
+          return { migrated, errors, total: oldPatients.length };
+        } catch (err) {
+          console.error('Erro na migração:', err);
+          return { migrated: 0, errors: 0, total: 0 };
+        }
+      };
+
+      // ── Load Patients from Supabase ──
+      useEffect(() => {
+        const loadPatients = async () => {
+          if (!currentUser || !currentUser.clinic_id) {
+            setLoadingPatients(false);
+            return;
+          }
+          
+          try {
+            // Verificar se há dados antigos para migrar
+            const oldPatients = JSON.parse(localStorage.getItem("dental_patients") || "[]");
+            if (oldPatients.length > 0) {
+              const shouldMigrate = confirm(
+                `Encontramos ${oldPatients.length} paciente(s) no sistema antigo.\n\n` +
+                `Deseja migrá-los para o novo sistema Supabase?\n\n` +
+                `(Recomendado: clique em OK para migrar)`
+              );
+              
+              if (shouldMigrate) {
+                const result = await migrateOldDataToSupabase();
+                if (result.migrated > 0) {
+                  alert(
+                    `Migração concluída!\n\n` +
+                    `✅ ${result.migrated} paciente(s) migrado(s) com sucesso\n` +
+                    (result.errors > 0 ? `⚠️ ${result.errors} erro(s)` : '')
+                  );
+                }
+              }
+            }
+            
+            // Carregar pacientes do Supabase
+            const { data, error } = await supabase
+              .from('patients')
+              .select('*')
+              .eq('clinic_id', currentUser.clinic_id)
+              .order('created_at', { ascending: false });
+            
+            if (error) throw error;
+            
+            // Converter para formato local (híbrido)
+            const patientsData = data.map(p => ({
+              ...p,
+              birthDate: p.birth_date,
+              // Dados ainda no LocalStorage (temporário)
+              anamnesis: getLocalData('anamnesis', p.id) || {...defaultAnamnesis},
+              records: getLocalData('records', p.id) || [],
+              documents: getLocalData('documents', p.id) || [],
+              responsavelHistory: getLocalData('responsavelHistory', p.id) || [],
+              arrivalControl: getLocalData('arrivalControl', p.id) || null,
+              financeiro: getLocalData('financeiro', p.id) || { orcamento_total: 0, pagamentos: [] },
+              createdAt: p.created_at
+            }));
+            
+            setPatients(patientsData);
+          } catch (err) {
+            console.error('Erro ao carregar pacientes:', err);
+            // Fallback para LocalStorage se houver erro
+            try {
+              const localPatients = JSON.parse(localStorage.getItem("dental_patients")) || [];
+              setPatients(localPatients.map(migratePatient));
+            } catch {
+              setPatients([]);
+            }
+          } finally {
+            setLoadingPatients(false);
+          }
+        };
+        
+        loadPatients();
+      }, [currentUser]);
+      
+      // ── Setup Realtime Listeners ──
+      useEffect(() => {
+        if (currentUser && currentUser.clinic_id) {
+          setupRealtimeListeners();
+        }
+        
+        // Cleanup ao desmontar ou trocar usuário
+        return () => {
+          realtimeChannels.forEach(channel => {
+            supabase.removeChannel(channel);
+          });
+        };
+      }, [currentUser]);
+
       // ── Persist (with error handling to prevent UI freeze) ──
       const safeSave = (key, data) => { try { localStorage.setItem(key, JSON.stringify(data)); } catch(e) { console.warn("localStorage save failed for", key, e.message); } };
       useEffect(() => { safeSave("dental_users", users); }, [users]);
-      useEffect(() => { safeSave("dental_patients", patients); }, [patients]);
+      // Pacientes agora são salvos no Supabase, não no localStorage
+      // useEffect(() => { safeSave("dental_patients", patients); }, [patients]);
       useEffect(() => { safeSave("dental_audit", auditLogs); }, [auditLogs]);
       useEffect(() => { if (currentUser) safeSave("dental_session", currentUser); else localStorage.removeItem("dental_session"); }, [currentUser]);
 
       // ── Helpers ──
       const getUserName = (id) => { const u = users.find(x => x.id === id); return u ? u.name : "—"; };
+      
+      // Helper para gerenciar dados locais temporários (até migrar para Supabase)
+      const getLocalData = (type, patientId) => {
+        try {
+          const key = `patient_${type}_${patientId}`;
+          const data = localStorage.getItem(key);
+          return data ? JSON.parse(data) : null;
+        } catch {
+          return null;
+        }
+      };
+      
+      const saveLocalData = (type, patientId, data) => {
+        try {
+          const key = `patient_${type}_${patientId}`;
+          localStorage.setItem(key, JSON.stringify(data));
+        } catch (e) {
+          console.warn(`Erro ao salvar ${type} local:`, e);
+        }
+      };
+      
+      const removeLocalData = (patientId) => {
+        ['anamnesis', 'records', 'documents', 'responsavelHistory', 'arrivalControl', 'financeiro'].forEach(type => {
+          try {
+            localStorage.removeItem(`patient_${type}_${patientId}`);
+          } catch {}
+        });
+      };
       const isAdmin = currentUser?.role === "admin";
       const activeDentists = users.filter(u => u.active && u.role !== "admin");
 
@@ -581,33 +775,784 @@
         setSelectedPatient(null);
       };
 
+      // ── Supabase Storage Functions ──
+      
+      // Converter base64 para Blob
+      const base64ToBlob = (base64, mimeType = 'image/png') => {
+        const byteString = atob(base64.split(',')[1]);
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        return new Blob([ab], { type: mimeType });
+      };
+      
+      // ── CRUD Financeiro: Orçamentos ──
+      const createOrUpdateBudgetSupabase = async (patientId, totalAmount) => {
+        try {
+          const { data, error } = await supabase
+            .from('patient_budgets')
+            .upsert({
+              patient_id: patientId,
+              clinic_id: currentUser.clinic_id,
+              total_amount: parseFloat(totalAmount) || 0,
+              created_by: currentUser.id,
+              updated_by: currentUser.id
+            }, {
+              onConflict: 'patient_id'
+            })
+            .select()
+            .single();
+          
+          if (error) throw error;
+          return data;
+        } catch (err) {
+          console.error('Erro ao salvar orçamento:', err);
+          return null;
+        }
+      };
+      
+      const loadBudgetSupabase = async (patientId) => {
+        try {
+          const { data, error } = await supabase
+            .from('patient_budgets')
+            .select('*')
+            .eq('patient_id', patientId)
+            .single();
+          
+          if (error && error.code !== 'PGRST116') throw error; // PGRST116 = not found
+          return data || { total_amount: 0 };
+        } catch (err) {
+          console.error('Erro ao carregar orçamento:', err);
+          return { total_amount: 0 };
+        }
+      };
+      
+      // ── CRUD Financeiro: Pagamentos ──
+      const createPaymentSupabase = async (patientId, paymentData) => {
+        try {
+          const { data, error } = await supabase
+            .from('payments')
+            .insert({
+              patient_id: patientId,
+              clinic_id: currentUser.clinic_id,
+              payment_date: paymentData.data,
+              amount: parseFloat(paymentData.valor),
+              payment_method: paymentData.forma_pagamento,
+              notes: paymentData.observacao || null,
+              registered_by: currentUser.id,
+              registered_at: new Date().toISOString()
+            })
+            .select()
+            .single();
+          
+          if (error) throw error;
+          return data;
+        } catch (err) {
+          console.error('Erro ao criar pagamento:', err);
+          return null;
+        }
+      };
+      
+      const loadPaymentsSupabase = async (patientId) => {
+        try {
+          const { data, error } = await supabase
+            .from('payments')
+            .select(`
+              *,
+              registered_by_profile:profiles!registered_by(full_name)
+            `)
+            .eq('patient_id', patientId)
+            .order('payment_date', { ascending: false });
+          
+          if (error) throw error;
+          
+          // Transformar para formato do LocalStorage
+          return (data || []).map(p => ({
+            id: p.id,
+            data: p.payment_date,
+            valor: parseFloat(p.amount),
+            forma_pagamento: p.payment_method,
+            observacao: p.notes || '',
+            registrado_por: p.registered_by_profile?.full_name || 'Usuário',
+            registrado_em: p.registered_at
+          }));
+        } catch (err) {
+          console.error('Erro ao carregar pagamentos:', err);
+          return [];
+        }
+      };
+      
+      const deletePaymentSupabase = async (paymentId) => {
+        try {
+          const { error } = await supabase
+            .from('payments')
+            .delete()
+            .eq('id', paymentId);
+          
+          if (error) throw error;
+          return true;
+        } catch (err) {
+          console.error('Erro ao deletar pagamento:', err);
+          return false;
+        }
+      };
+      
+      // ── Realtime & Notificações ──
+      const showNotification = (message, type = 'info') => {
+        const id = Date.now();
+        setNotifications(prev => [...prev, { id, message, type }]);
+        
+        // Auto-remover após 5 segundos
+        setTimeout(() => {
+          setNotifications(prev => prev.filter(n => n.id !== id));
+        }, 5000);
+      };
+      
+      const setupRealtimeListeners = () => {
+        if (!currentUser || !currentUser.clinic_id) return;
+        
+        // Limpar listeners antigos
+        realtimeChannels.forEach(channel => {
+          supabase.removeChannel(channel);
+        });
+        
+        const channels = [];
+        
+        // Listener para patients
+        const patientsChannel = supabase
+          .channel('patients-changes')
+          .on('postgres_changes', 
+            { 
+              event: '*', 
+              schema: 'public', 
+              table: 'patients',
+              filter: `clinic_id=eq.${currentUser.clinic_id}`
+            }, 
+            (payload) => {
+              const { eventType, new: newRecord, old: oldRecord } = payload;
+              
+              switch (eventType) {
+                case 'INSERT':
+                  setPatients(prev => {
+                    // Evitar duplicatas
+                    if (prev.find(p => p.id === newRecord.id)) return prev;
+                    return [...prev, newRecord];
+                  });
+                  showNotification(`Novo paciente: ${newRecord.name}`, 'success');
+                  break;
+                  
+                case 'UPDATE':
+                  setPatients(prev => prev.map(p => 
+                    p.id === newRecord.id ? { ...p, ...newRecord } : p
+                  ));
+                  // Atualizar selectedPatient se estiver aberto
+                  if (selectedPatient?.id === newRecord.id) {
+                    setSelectedPatient(prev => ({ ...prev, ...newRecord }));
+                  }
+                  showNotification(`Paciente atualizado: ${newRecord.name}`, 'info');
+                  break;
+                  
+                case 'DELETE':
+                  setPatients(prev => prev.filter(p => p.id !== oldRecord.id));
+                  // Fechar prontuário se estiver aberto
+                  if (selectedPatient?.id === oldRecord.id) {
+                    setSelectedPatient(null);
+                    setView('list');
+                  }
+                  showNotification(`Paciente removido: ${oldRecord.name}`, 'warning');
+                  break;
+              }
+            }
+          )
+          .subscribe();
+        
+        channels.push(patientsChannel);
+        
+        // Listener para appointments
+        const appointmentsChannel = supabase
+          .channel('appointments-changes')
+          .on('postgres_changes', 
+            { 
+              event: '*', 
+              schema: 'public', 
+              table: 'appointments',
+              filter: `clinic_id=eq.${currentUser.clinic_id}`
+            }, 
+            async (payload) => {
+              const { eventType, new: newRecord, old: oldRecord } = payload;
+              
+              // Se o paciente estiver aberto, recarregar atendimentos
+              if (selectedPatient) {
+                const patientId = newRecord?.patient_id || oldRecord?.patient_id;
+                if (patientId === selectedPatient.id) {
+                  const appointments = await loadAppointmentsSupabase(patientId);
+                  setSelectedPatient(prev => ({ ...prev, records: appointments }));
+                  
+                  if (eventType === 'INSERT') {
+                    showNotification('Novo atendimento adicionado', 'success');
+                  } else if (eventType === 'DELETE') {
+                    showNotification('Atendimento removido', 'warning');
+                  }
+                }
+              }
+            }
+          )
+          .subscribe();
+        
+        channels.push(appointmentsChannel);
+        
+        // Listener para patient_budgets
+        const budgetsChannel = supabase
+          .channel('budgets-changes')
+          .on('postgres_changes', 
+            { 
+              event: '*', 
+              schema: 'public', 
+              table: 'patient_budgets',
+              filter: `clinic_id=eq.${currentUser.clinic_id}`
+            }, 
+            async (payload) => {
+              const { eventType, new: newRecord } = payload;
+              
+              // Se o paciente estiver aberto, recarregar orçamento
+              if (selectedPatient && newRecord?.patient_id === selectedPatient.id) {
+                const budget = await loadBudgetSupabase(newRecord.patient_id);
+                setSelectedPatient(prev => ({
+                  ...prev,
+                  financeiro: {
+                    ...prev.financeiro,
+                    orcamento_total: budget?.total_amount || 0
+                  }
+                }));
+                showNotification('Orçamento atualizado', 'info');
+              }
+            }
+          )
+          .subscribe();
+        
+        channels.push(budgetsChannel);
+        
+        // Listener para payments
+        const paymentsChannel = supabase
+          .channel('payments-changes')
+          .on('postgres_changes', 
+            { 
+              event: '*', 
+              schema: 'public', 
+              table: 'payments',
+              filter: `clinic_id=eq.${currentUser.clinic_id}`
+            }, 
+            async (payload) => {
+              const { eventType, new: newRecord, old: oldRecord } = payload;
+              
+              // Se o paciente estiver aberto, recarregar pagamentos
+              if (selectedPatient) {
+                const patientId = newRecord?.patient_id || oldRecord?.patient_id;
+                if (patientId === selectedPatient.id) {
+                  const payments = await loadPaymentsSupabase(patientId);
+                  setSelectedPatient(prev => ({
+                    ...prev,
+                    financeiro: {
+                      ...prev.financeiro,
+                      pagamentos: payments
+                    }
+                  }));
+                  
+                  if (eventType === 'INSERT') {
+                    showNotification('Novo pagamento registrado', 'success');
+                  } else if (eventType === 'DELETE') {
+                    showNotification('Pagamento removido', 'warning');
+                  }
+                }
+              }
+            }
+          )
+          .subscribe();
+        
+        channels.push(paymentsChannel);
+        
+        setRealtimeChannels(channels);
+      };
+      
+      // Upload de assinatura para Storage
+      const uploadSignatureToStorage = async (appointmentId, patientId, signatureBase64) => {
+        try {
+          if (!signatureBase64 || !signatureBase64.startsWith('data:image')) {
+            return null;
+          }
+          
+          const blob = base64ToBlob(signatureBase64, 'image/png');
+          const fileName = `${appointmentId}.png`;
+          const filePath = `${currentUser.clinic_id}/${patientId}/${fileName}`;
+          
+          const { data, error } = await supabase.storage
+            .from('appointment-signatures')
+            .upload(filePath, blob, {
+              contentType: 'image/png',
+              upsert: true
+            });
+          
+          if (error) throw error;
+          
+          // Obter URL pública
+          const { data: { publicUrl } } = supabase.storage
+            .from('appointment-signatures')
+            .getPublicUrl(filePath);
+          
+          return publicUrl;
+        } catch (err) {
+          console.error('Erro ao fazer upload de assinatura:', err);
+          return null;
+        }
+      };
+      
+      // Upload de foto para Storage
+      const uploadPhotoToStorage = async (appointmentId, patientId, file, photoId) => {
+        try {
+          const ext = file.name.split('.').pop();
+          const fileName = `${photoId}.${ext}`;
+          const filePath = `${currentUser.clinic_id}/${patientId}/${appointmentId}/${fileName}`;
+          
+          const { data, error } = await supabase.storage
+            .from('appointment-photos')
+            .upload(filePath, file, {
+              contentType: file.type,
+              upsert: true
+            });
+          
+          if (error) throw error;
+          
+          // Obter URL pública
+          const { data: { publicUrl } } = supabase.storage
+            .from('appointment-photos')
+            .getPublicUrl(filePath);
+          
+          return {
+            id: photoId,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            url: publicUrl,
+            storage_path: filePath
+          };
+        } catch (err) {
+          console.error('Erro ao fazer upload de foto:', err);
+          return null;
+        }
+      };
+      
+      // Upload de documento para Storage
+      const uploadDocumentToStorage = async (patientId, file) => {
+        try {
+          const docId = `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const ext = file.name.split('.').pop();
+          const fileName = `${docId}.${ext}`;
+          const filePath = `${currentUser.clinic_id}/${patientId}/${fileName}`;
+          
+          const { data, error } = await supabase.storage
+            .from('patient-documents')
+            .upload(filePath, file, {
+              contentType: file.type,
+              upsert: false
+            });
+          
+          if (error) throw error;
+          
+          // Obter URL pública
+          const { data: { publicUrl } } = supabase.storage
+            .from('patient-documents')
+            .getPublicUrl(filePath);
+          
+          // Inserir registro na tabela patient_documents
+          const { data: docData, error: docError } = await supabase
+            .from('patient_documents')
+            .insert({
+              patient_id: patientId,
+              clinic_id: currentUser.clinic_id,
+              file_name: file.name,
+              file_type: file.type,
+              file_size: file.size,
+              storage_path: filePath,
+              storage_url: publicUrl,
+              uploaded_by: currentUser.id
+            })
+            .select()
+            .single();
+          
+          if (docError) throw docError;
+          
+          return {
+            id: docData.id,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            url: publicUrl,
+            storage_path: filePath,
+            uploadedBy: currentUser.id,
+            uploadedByName: currentUser.name,
+            uploadedAt: docData.uploaded_at
+          };
+        } catch (err) {
+          console.error('Erro ao fazer upload de documento:', err);
+          throw err;
+        }
+      };
+      
+      // Deletar arquivo do Storage
+      const deleteFromStorage = async (bucket, path) => {
+        try {
+          const { error } = await supabase.storage
+            .from(bucket)
+            .remove([path]);
+          
+          if (error) throw error;
+          return true;
+        } catch (err) {
+          console.error('Erro ao deletar arquivo do Storage:', err);
+          return false;
+        }
+      };
+
+      // ── Appointments CRUD (Supabase) ──
+      const createAppointmentSupabase = async (patientId, appointmentData) => {
+        const { data, error } = await supabase
+          .from('appointments')
+          .insert({
+            patient_id: patientId,
+            clinic_id: currentUser.clinic_id,
+            appointment_date: appointmentData.date,
+            tipo_atendimento: appointmentData.tipo_atendimento,
+            specialty: appointmentData.specialty,
+            procedures: appointmentData.procedures,
+            teeth: appointmentData.teeth || [],
+            notes: appointmentData.notes || null,
+            next_appointment: appointmentData.nextAppointment || null,
+            wire_info: appointmentData.wireInfo || null,
+            dentista_atendente_id: appointmentData.dentista_atendente_id,
+            dentista_responsavel_no_momento_id: appointmentData.dentista_responsavel_no_momento_id || null,
+            atendimento_fora_da_responsabilidade: appointmentData.atendimento_fora_da_responsabilidade || false,
+            motivo_fora: appointmentData.motivo_fora || null
+          })
+          .select()
+          .single();
+        
+        if (error) throw error;
+        
+        // Upload de assinatura para Storage
+        let signatureUrl = null;
+        if (appointmentData.signature) {
+          signatureUrl = await uploadSignatureToStorage(data.id, patientId, appointmentData.signature);
+        }
+        
+        // Upload de fotos para Storage
+        let photosWithUrls = [];
+        if (appointmentData.photos && appointmentData.photos.length > 0) {
+          for (const photo of appointmentData.photos) {
+            // Se a foto tem blob no IndexedDB, fazer upload
+            if (photo.id && fileCache[photo.id]) {
+              const blob = await fetch(fileCache[photo.id]).then(r => r.blob());
+              const file = new File([blob], photo.name, { type: photo.type });
+              const photoData = await uploadPhotoToStorage(data.id, patientId, file, photo.id);
+              if (photoData) {
+                photosWithUrls.push(photoData);
+              }
+            } else {
+              // Manter metadata se não conseguir fazer upload
+              photosWithUrls.push(photo);
+            }
+          }
+        }
+        
+        // Atualizar appointment com URLs
+        if (signatureUrl || photosWithUrls.length > 0) {
+          const { error: updateError } = await supabase
+            .from('appointments')
+            .update({
+              signature_url: signatureUrl,
+              photos: photosWithUrls.length > 0 ? photosWithUrls : null
+            })
+            .eq('id', data.id);
+          
+          if (updateError) console.error('Erro ao atualizar URLs:', updateError);
+        }
+        
+        return {
+          ...data,
+          date: data.appointment_date,
+          nextAppointment: data.next_appointment,
+          wireInfo: data.wire_info,
+          signature: appointmentData.signature || "",
+          signatureUrl: signatureUrl,
+          photos: photosWithUrls,
+          createdAt: data.created_at
+        };
+      };
+      
+      const loadAppointmentsSupabase = async (patientId) => {
+        const { data, error } = await supabase
+          .from('appointments')
+          .select('*')
+          .eq('patient_id', patientId)
+          .order('appointment_date', { ascending: false });
+        
+        if (error) throw error;
+        
+        // Carregar assinaturas e fotos do Storage
+        return data.map(a => ({
+          ...a,
+          date: a.appointment_date,
+          nextAppointment: a.next_appointment,
+          wireInfo: a.wire_info,
+          signature: "", // Não precisa mais do base64
+          signatureUrl: a.signature_url,
+          photos: a.photos || [],
+          createdAt: a.created_at
+        }));
+      };
+      
+      const deleteAppointmentSupabase = async (id) => {
+        const { error } = await supabase
+          .from('appointments')
+          .delete()
+          .eq('id', id);
+        
+        if (error) throw error;
+        
+        // Limpar dados locais
+        localStorage.removeItem(`appointment_signature_${id}`);
+        localStorage.removeItem(`appointment_photos_${id}`);
+      };
+      
+      // ── Migração de Records Antigos ──
+      const migrateRecordsToSupabase = async (patientId) => {
+        try {
+          const oldRecords = getLocalData('records', patientId) || [];
+          if (oldRecords.length === 0) return { migrated: 0, errors: 0, total: 0 };
+          
+          let migrated = 0;
+          let errors = 0;
+          
+          for (const oldRecord of oldRecords) {
+            try {
+              await createAppointmentSupabase(patientId, oldRecord);
+              migrated++;
+            } catch (err) {
+              console.error(`Erro ao migrar atendimento:`, err);
+              errors++;
+            }
+          }
+          
+          // Limpar dados antigos após migração bem-sucedida
+          if (migrated > 0 && errors === 0) {
+            localStorage.removeItem(`patient_records_${patientId}`);
+          }
+          
+          return { migrated, errors, total: oldRecords.length };
+        } catch (err) {
+          console.error('Erro na migração de atendimentos:', err);
+          return { migrated: 0, errors: 0, total: 0 };
+        }
+      };
+
       // ── Patient CRUD ──
-      const createPatient = () => {
+      const createPatient = async () => {
         if (!npForm.name.trim() || (!npForm.responsavel_clinico_id && !npForm.responsavel_orto_id)) return;
-        const p = { id:generateId(), ...npForm, anamnesis:{...defaultAnamnesis}, records:[], documents:[], responsavelHistory:[], createdAt:new Date().toISOString() };
-        setPatients(prev => [p, ...prev]);
-        setNpForm({ codigo:"", name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
-        setShowNewPatient(false);
-        setSelectedPatient(p);
-        setView("patient");
-        addAudit("CRIAR_PACIENTE","paciente",p.id,p.name, `Resp. Clínico: ${getUserName(npForm.responsavel_clinico_id)}, Resp. Orto: ${getUserName(npForm.responsavel_orto_id)}`);
+        
+        try {
+          const { data, error } = await supabase
+            .from('patients')
+            .insert({
+              clinic_id: currentUser.clinic_id,
+              codigo: npForm.codigo || null,
+              name: npForm.name,
+              birth_date: npForm.birthDate || null,
+              phone: npForm.phone || null,
+              email: npForm.email || null,
+              cpf: npForm.cpf || null,
+              address: npForm.address || null,
+              responsavel_clinico_id: npForm.responsavel_clinico_id || null,
+              responsavel_orto_id: npForm.responsavel_orto_id || null
+            })
+            .select()
+            .single();
+          
+          if (error) throw error;
+          
+          // Converter para formato local (híbrido)
+          const newPatient = {
+            ...data,
+            birthDate: data.birth_date,
+            anamnesis: {...defaultAnamnesis},
+            records: [],
+            documents: [],
+            responsavelHistory: [],
+            arrivalControl: null,
+            financeiro: { orcamento_total: 0, pagamentos: [] },
+            createdAt: data.created_at
+          };
+          
+          // Salvar dados locais temporários
+          saveLocalData('anamnesis', newPatient.id, newPatient.anamnesis);
+          saveLocalData('records', newPatient.id, newPatient.records);
+          saveLocalData('documents', newPatient.id, newPatient.documents);
+          saveLocalData('responsavelHistory', newPatient.id, newPatient.responsavelHistory);
+          saveLocalData('financeiro', newPatient.id, newPatient.financeiro);
+          
+          setPatients(prev => [newPatient, ...prev]);
+          setNpForm({ codigo:"", name:"", birthDate:"", phone:"", email:"", cpf:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
+          setShowNewPatient(false);
+          setSelectedPatient(newPatient);
+          setView("patient");
+          addAudit("CRIAR_PACIENTE","paciente",newPatient.id,newPatient.name, `Resp. Clínico: ${getUserName(npForm.responsavel_clinico_id)}, Resp. Orto: ${getUserName(npForm.responsavel_orto_id)}`);
+        } catch (err) {
+          console.error('Erro ao criar paciente:', err);
+          alert('Erro ao criar paciente. Verifique os dados e tente novamente.');
+        }
       };
 
-      const deletePatient = (id) => {
+      const deletePatient = async (id) => {
         const p = patients.find(x => x.id === id);
-        setPatients(prev => prev.filter(x => x.id !== id));
-        setSelectedPatient(null); setView("list");
-        if (p) addAudit("EXCLUIR_PACIENTE","paciente",id,p.name,"");
+        if (!p) return;
+        
+        if (!confirm(`Deseja realmente excluir o paciente ${p.name}? Esta ação não pode ser desfeita.`)) return;
+        
+        try {
+          const { error } = await supabase
+            .from('patients')
+            .delete()
+            .eq('id', id);
+          
+          if (error) throw error;
+          
+          // Remover dados locais
+          removeLocalData(id);
+          
+          setPatients(prev => prev.filter(x => x.id !== id));
+          setSelectedPatient(null);
+          setView("list");
+          addAudit("EXCLUIR_PACIENTE","paciente",id,p.name,"");
+        } catch (err) {
+          console.error('Erro ao excluir paciente:', err);
+          alert('Erro ao excluir paciente. Tente novamente.');
+        }
       };
 
-      const openPatient = (p) => {
-        const fresh = patients.find(x => x.id === p.id) || p;
-        setSelectedPatient(fresh); setView("patient"); setPatientTab("orto");
-        addAudit("VISUALIZAR_PRONTUARIO","paciente",fresh.id,fresh.name,"");
+      const openPatient = async (p) => {
+        try {
+          const fresh = patients.find(x => x.id === p.id) || p;
+          
+          // Verificar se há records antigos para migrar
+          const oldRecords = getLocalData('records', fresh.id) || [];
+          if (oldRecords.length > 0) {
+            const shouldMigrate = confirm(
+              `Encontramos ${oldRecords.length} atendimento(s) antigo(s) deste paciente.\n\n` +
+              `Deseja migrá-los para o novo sistema Supabase?\n\n` +
+              `(Recomendado: clique em OK para migrar)`
+            );
+            
+            if (shouldMigrate) {
+              const result = await migrateRecordsToSupabase(fresh.id);
+              if (result.migrated > 0) {
+                alert(
+                  `Migração de atendimentos concluída!\n\n` +
+                  `✅ ${result.migrated} atendimento(s) migrado(s) com sucesso\n` +
+                  (result.errors > 0 ? `⚠️ ${result.errors} erro(s)` : '')
+                );
+              }
+            }
+          }
+          
+          // Carregar atendimentos do Supabase
+          const appointments = await loadAppointmentsSupabase(fresh.id);
+          
+          // Carregar dados financeiros do Supabase
+          const budget = await loadBudgetSupabase(fresh.id);
+          const payments = await loadPaymentsSupabase(fresh.id);
+          
+          // Verificar se há dados financeiros antigos para migrar
+          const oldFinanceiro = getLocalData('financeiro', fresh.id);
+          if (oldFinanceiro && (oldFinanceiro.orcamento_total > 0 || oldFinanceiro.pagamentos?.length > 0)) {
+            const shouldMigrate = confirm(
+              `Encontramos dados financeiros antigos deste paciente.\n\n` +
+              `Orçamento: R$ ${oldFinanceiro.orcamento_total.toFixed(2)}\n` +
+              `Pagamentos: ${oldFinanceiro.pagamentos?.length || 0}\n\n` +
+              `Deseja migrá-los para o novo sistema Supabase?\n\n` +
+              `(Recomendado: clique em OK para migrar)`
+            );
+            
+            if (shouldMigrate) {
+              let migrated = 0;
+              let errors = 0;
+              
+              // Migrar orçamento
+              if (oldFinanceiro.orcamento_total > 0) {
+                const budgetResult = await createOrUpdateBudgetSupabase(fresh.id, oldFinanceiro.orcamento_total);
+                if (budgetResult) migrated++;
+                else errors++;
+              }
+              
+              // Migrar pagamentos
+              for (const pagamento of (oldFinanceiro.pagamentos || [])) {
+                const paymentResult = await createPaymentSupabase(fresh.id, {
+                  data: pagamento.data,
+                  valor: pagamento.valor,
+                  forma_pagamento: pagamento.forma_pagamento,
+                  observacao: pagamento.observacao
+                });
+                if (paymentResult) migrated++;
+                else errors++;
+              }
+              
+              if (migrated > 0) {
+                alert(
+                  `Migração financeira concluída!\n\n` +
+                  `✅ ${migrated} item(ns) migrado(s) com sucesso\n` +
+                  (errors > 0 ? `⚠️ ${errors} erro(s)` : '')
+                );
+                
+                // Recarregar dados após migração
+                const newBudget = await loadBudgetSupabase(fresh.id);
+                const newPayments = await loadPaymentsSupabase(fresh.id);
+                budget.total_amount = newBudget?.total_amount || 0;
+                payments.splice(0, payments.length, ...newPayments);
+                
+                // Limpar dados antigos
+                localStorage.removeItem(`patient_financeiro_${fresh.id}`);
+              }
+            }
+          }
+          
+          const patientWithRecords = {
+            ...fresh,
+            records: appointments,
+            financeiro: {
+              orcamento_total: budget?.total_amount || 0,
+              pagamentos: payments
+            }
+          };
+          
+          setSelectedPatient(patientWithRecords);
+          setView("patient");
+          setPatientTab("orto");
+          addAudit("VISUALIZAR_PRONTUARIO","paciente",fresh.id,fresh.name,"");
+        } catch (err) {
+          console.error('Erro ao carregar atendimentos:', err);
+          // Fallback para dados locais
+          const fresh = patients.find(x => x.id === p.id) || p;
+          const localRecords = getLocalData('records', fresh.id) || [];
+          setSelectedPatient({...fresh, records: localRecords});
+          setView("patient");
+          setPatientTab("orto");
+        }
       };
 
       // ── Anamnesis ──
       const saveAnamnesis = () => {
+        // Salvar anamnesis no LocalStorage (temporário - será migrado na Fase 3)
+        saveLocalData('anamnesis', selectedPatient.id, anamnesisForm);
+        
         setPatients(prev => prev.map(p => p.id===selectedPatient.id ? {...p, anamnesis:{...anamnesisForm}} : p));
         setSelectedPatient(prev => ({...prev, anamnesis:{...anamnesisForm}}));
         setEditingAnamnesis(false);
@@ -615,7 +1560,7 @@
       };
 
       // ── Change Responsible ──
-      const saveResponsible = () => {
+      const saveResponsible = async () => {
         const changes = [];
         if (respForm.responsavel_clinico_id !== selectedPatient.responsavel_clinico_id) {
           changes.push({ date:new Date().toISOString(), changedBy:currentUser.id, changedByName:currentUser.name, field:"responsavel_clinico_id", from:selectedPatient.responsavel_clinico_id, fromName:getUserName(selectedPatient.responsavel_clinico_id), to:respForm.responsavel_clinico_id, toName:getUserName(respForm.responsavel_clinico_id) });
@@ -624,11 +1569,33 @@
           changes.push({ date:new Date().toISOString(), changedBy:currentUser.id, changedByName:currentUser.name, field:"responsavel_orto_id", from:selectedPatient.responsavel_orto_id, fromName:getUserName(selectedPatient.responsavel_orto_id), to:respForm.responsavel_orto_id, toName:getUserName(respForm.responsavel_orto_id) });
         }
         if (changes.length === 0) { setShowChangeResp(false); return; }
-        const updated = { ...selectedPatient, responsavel_clinico_id:respForm.responsavel_clinico_id, responsavel_orto_id:respForm.responsavel_orto_id, responsavelHistory:[...selectedPatient.responsavelHistory, ...changes] };
-        setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
-        setSelectedPatient(updated);
-        setShowChangeResp(false);
-        addAudit("ALTERAR_RESPONSAVEL","paciente",selectedPatient.id,selectedPatient.name, changes.map(c => `${c.field==="responsavel_clinico_id"?"Clínico":"Orto"}: ${c.fromName} → ${c.toName}`).join("; "));
+        
+        try {
+          // Atualizar no Supabase
+          const { error } = await supabase
+            .from('patients')
+            .update({
+              responsavel_clinico_id: respForm.responsavel_clinico_id || null,
+              responsavel_orto_id: respForm.responsavel_orto_id || null
+            })
+            .eq('id', selectedPatient.id);
+          
+          if (error) throw error;
+          
+          const newHistory = [...selectedPatient.responsavelHistory, ...changes];
+          const updated = { ...selectedPatient, responsavel_clinico_id:respForm.responsavel_clinico_id, responsavel_orto_id:respForm.responsavel_orto_id, responsavelHistory:newHistory };
+          
+          // Salvar histórico no LocalStorage (temporário)
+          saveLocalData('responsavelHistory', selectedPatient.id, newHistory);
+          
+          setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
+          setSelectedPatient(updated);
+          setShowChangeResp(false);
+          addAudit("ALTERAR_RESPONSAVEL","paciente",selectedPatient.id,selectedPatient.name, changes.map(c => `${c.field==="responsavel_clinico_id"?"Clínico":"Orto"}: ${c.fromName} → ${c.toName}`).join("; "));
+        } catch (err) {
+          console.error('Erro ao alterar responsável:', err);
+          alert('Erro ao alterar responsável. Tente novamente.');
+        }
       };
 
       // ── Arrival Control ──
@@ -674,33 +1641,74 @@
       };
 
       // ── Financeiro ──
-      const saveOrcamento = (patientId, valor) => {
-        setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, orcamento_total: parseFloat(valor) || 0}} : p));
-        addAudit("ATUALIZAR_ORCAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Or\u00e7amento: R$ ${parseFloat(valor).toFixed(2)}`);
-        setEditingOrcamento(false);
-        setTempOrcamento("");
+      const saveOrcamento = async (patientId, valor) => {
+        try {
+          // Salvar no Supabase
+          await createOrUpdateBudgetSupabase(patientId, valor);
+          
+          // Atualizar estado local
+          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, orcamento_total: parseFloat(valor) || 0}} : p));
+          addAudit("ATUALIZAR_ORCAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Orçamento: R$ ${parseFloat(valor).toFixed(2)}`);
+          setEditingOrcamento(false);
+          setTempOrcamento("");
+        } catch (err) {
+          console.error('Erro ao salvar orçamento:', err);
+          alert('Erro ao salvar orçamento. Tente novamente.');
+        }
       };
 
-      const addPagamento = (patientId) => {
+      const addPagamento = async (patientId) => {
         if (!financeiroForm.valor || parseFloat(financeiroForm.valor) <= 0) return;
-        const novoPagamento = {
-          id: generateId(),
-          data: financeiroForm.data,
-          valor: parseFloat(financeiroForm.valor),
-          forma_pagamento: financeiroForm.forma_pagamento,
-          observacao: financeiroForm.observacao,
-          registrado_por: currentUser.name,
-          registrado_em: new Date().toISOString()
-        };
-        setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: [...p.financeiro.pagamentos, novoPagamento]}} : p));
-        addAudit("ADICIONAR_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Valor: R$ ${novoPagamento.valor.toFixed(2)} - ${novoPagamento.forma_pagamento === "avista" ? "\u00c0 vista" : "Parcelado"}`);
-        setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
+        
+        try {
+          // Criar no Supabase
+          const data = await createPaymentSupabase(patientId, financeiroForm);
+          
+          if (!data) {
+            alert('Erro ao adicionar pagamento. Tente novamente.');
+            return;
+          }
+          
+          // Transformar para formato local
+          const novoPagamento = {
+            id: data.id,
+            data: data.payment_date,
+            valor: parseFloat(data.amount),
+            forma_pagamento: data.payment_method,
+            observacao: data.notes || '',
+            registrado_por: currentUser.name,
+            registrado_em: data.registered_at
+          };
+          
+          // Atualizar estado local
+          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: [...p.financeiro.pagamentos, novoPagamento]}} : p));
+          addAudit("ADICIONAR_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Valor: R$ ${novoPagamento.valor.toFixed(2)} - ${novoPagamento.forma_pagamento === "avista" ? "À vista" : "Parcelado"}`);
+          setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
+        } catch (err) {
+          console.error('Erro ao adicionar pagamento:', err);
+          alert('Erro ao adicionar pagamento. Tente novamente.');
+        }
       };
 
-      const removePagamento = (patientId, pagamentoId) => {
+      const removePagamento = async (patientId, pagamentoId) => {
         if (!confirm("Deseja realmente remover este pagamento?")) return;
-        setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: p.financeiro.pagamentos.filter(pg => pg.id !== pagamentoId)}} : p));
-        addAudit("REMOVER_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"","");
+        
+        try {
+          // Deletar do Supabase
+          const success = await deletePaymentSupabase(pagamentoId);
+          
+          if (!success) {
+            alert('Erro ao remover pagamento. Tente novamente.');
+            return;
+          }
+          
+          // Atualizar estado local
+          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: p.financeiro.pagamentos.filter(pg => pg.id !== pagamentoId)}} : p));
+          addAudit("REMOVER_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"","");
+        } catch (err) {
+          console.error('Erro ao remover pagamento:', err);
+          alert('Erro ao remover pagamento. Tente novamente.');
+        }
       };
 
       // ── Records ──
@@ -735,27 +1743,50 @@
         setRespCheckMotivo("");
       };
 
-      const saveRecord = (rec) => {
-        // Limpa o controle de chegada ao registrar atendimento (finaliza o atendimento)
-        const updated = { 
-          ...selectedPatient, 
-          records: [rec, ...selectedPatient.records],
-          arrivalControl: null // Remove da fila ao finalizar atendimento
-        };
-        setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
-        setSelectedPatient(updated);
-        setNrForm({...emptyNrForm});
-        setShowNewRecord(false);
-        addAudit("CRIAR_ATENDIMENTO","atendimento",rec.id,selectedPatient.name,
-          `Tipo: ${rec.tipo_atendimento}, Especialidade: ${SPECIALTIES[rec.specialty]?.label}, Fora da resp: ${rec.atendimento_fora_da_responsabilidade?"SIM":"NÃO"}${rec.motivo_fora?", Motivo: "+rec.motivo_fora:""}`);
-        addAudit("FINALIZAR_ATENDIMENTO","paciente",selectedPatient.id,selectedPatient.name,"Atendimento finalizado e paciente removido da fila");
+      const saveRecord = async (rec) => {
+        try {
+          // Criar atendimento no Supabase
+          const newAppointment = await createAppointmentSupabase(selectedPatient.id, rec);
+          
+          // Atualizar estado local
+          const updated = { 
+            ...selectedPatient, 
+            records: [newAppointment, ...selectedPatient.records],
+            arrivalControl: null // Remove da fila ao finalizar atendimento
+          };
+          
+          setPatients(prev => prev.map(p => p.id === selectedPatient.id ? updated : p));
+          setSelectedPatient(updated);
+          setNrForm({...emptyNrForm});
+          setShowNewRecord(false);
+          
+          addAudit("CRIAR_ATENDIMENTO","atendimento",newAppointment.id,selectedPatient.name,
+            `Tipo: ${rec.tipo_atendimento}, Especialidade: ${SPECIALTIES[rec.specialty]?.label}, Fora da resp: ${rec.atendimento_fora_da_responsabilidade?"SIM":"NÃO"}${rec.motivo_fora?", Motivo: "+rec.motivo_fora:""}`);
+          addAudit("FINALIZAR_ATENDIMENTO","paciente",selectedPatient.id,selectedPatient.name,"Atendimento finalizado e paciente removido da fila");
+        } catch (err) {
+          console.error('Erro ao salvar atendimento:', err);
+          alert('Erro ao salvar atendimento. Verifique os dados e tente novamente.');
+        }
       };
 
-      const deleteRecord = (recId) => {
-        const updated = { ...selectedPatient, records: selectedPatient.records.filter(r => r.id !== recId) };
-        setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
-        setSelectedPatient(updated);
-        addAudit("EXCLUIR_ATENDIMENTO","atendimento",recId,selectedPatient.name,"");
+      const deleteRecord = async (recId) => {
+        if (!confirm("Deseja realmente excluir este atendimento? Esta ação não pode ser desfeita.")) return;
+        
+        try {
+          await deleteAppointmentSupabase(recId);
+          
+          const updated = { 
+            ...selectedPatient, 
+            records: selectedPatient.records.filter(r => r.id !== recId) 
+          };
+          
+          setPatients(prev => prev.map(p => p.id === selectedPatient.id ? updated : p));
+          setSelectedPatient(updated);
+          addAudit("EXCLUIR_ATENDIMENTO","atendimento",recId,selectedPatient.name,"");
+        } catch (err) {
+          console.error('Erro ao excluir atendimento:', err);
+          alert('Erro ao excluir atendimento. Tente novamente.');
+        }
       };
 
       // ── Relatório ──
@@ -878,24 +1909,29 @@
       };
 
       // ── Patient Documents ──
-      const handleDocUpload = (e) => {
-        Array.from(e.target.files).forEach(file => {
-          if (file.size > MAX_FILE_SIZE) { alert(`Arquivo ${file.name} excede 50MB.`); return; }
-          if (!ALLOWED_FILE_TYPES.some(t => file.type === t || file.type.startsWith("image/"))) { alert(`Tipo não permitido: ${file.type}`); return; }
-          const fid = generateId();
-          const reader = new FileReader();
-          reader.onload = async (ev) => {
-            const dataUrl = ev.target.result;
-            try { await FileDB.put(fid, dataUrl); } catch(err) { alert("Erro ao salvar arquivo: " + err.message); return; }
-            setFileCache(prev => ({...prev, [fid]: dataUrl}));
-            const doc = { id:fid, name:file.name, type:file.type, size:file.size, uploadedBy:currentUser.id, uploadedByName:currentUser.name, uploadedAt:new Date().toISOString() };
+      const handleDocUpload = async (e) => {
+        for (const file of Array.from(e.target.files)) {
+          if (file.size > MAX_FILE_SIZE) { alert(`Arquivo ${file.name} excede 50MB.`); continue; }
+          if (!ALLOWED_FILE_TYPES.some(t => file.type === t || file.type.startsWith("image/"))) { alert(`Tipo não permitido: ${file.type}`); continue; }
+          
+          try {
+            // Upload para Supabase Storage
+            const doc = await uploadDocumentToStorage(selectedPatient.id, file);
+            
+            // Atualizar estado local
             const updated = { ...selectedPatient, documents:[doc, ...selectedPatient.documents] };
             setPatients(prev => prev.map(p => p.id===selectedPatient.id ? updated : p));
             setSelectedPatient(updated);
+            
+            // Salvar metadata no LocalStorage (para compatibilidade)
+            saveLocalData('documents', selectedPatient.id, updated.documents);
+            
             addAudit("UPLOAD_DOCUMENTO","paciente",selectedPatient.id,selectedPatient.name, `Arquivo: ${file.name} (${formatSize(file.size)})`);
-          };
-          reader.readAsDataURL(file);
-        });
+          } catch (err) {
+            console.error('Erro ao fazer upload de documento:', err);
+            alert(`Erro ao fazer upload de ${file.name}. Tente novamente.`);
+          }
+        }
         if (docInputRef.current) docInputRef.current.value = "";
       };
 
@@ -978,6 +2014,18 @@
                 <div style={{ fontSize:18, fontWeight:800, letterSpacing:-0.5, cursor:"pointer" }} onClick={() => { setView("list"); setSelectedPatient(null); }}>🦷 O+ Fichas</div>
                 <div style={{ fontSize:10, opacity:0.5, fontWeight:500 }}>Prontuário Eletrônico</div>
               </div>
+              {/* Indicador de Sincronização */}
+              {syncing && (
+                <div style={{ display:"flex", alignItems:"center", gap:6, background:"rgba(255,255,255,0.12)", padding:"6px 12px", borderRadius:8, fontSize:12 }}>
+                  <div style={{ width:12, height:12, border:"2px solid #fff", borderTopColor:"transparent", borderRadius:"50%", animation:"spin 0.8s linear infinite" }}></div>
+                  Sincronizando...
+                </div>
+              )}
+              {!syncing && realtimeChannels.length > 0 && (
+                <div style={{ display:"flex", alignItems:"center", gap:6, background:"rgba(34,197,94,0.15)", padding:"6px 12px", borderRadius:8, fontSize:12, color:"#22C55E" }}>
+                  ✓ Sincronizado
+                </div>
+              )}
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
               {(currentUser.role === "dentista" || currentUser.role === "orto" || currentUser.role === "admin") && (
@@ -1025,7 +2073,12 @@
                   style={{ flex:1, minWidth:200, padding:"12px 16px", borderRadius:12, border:"1.5px solid #CBD5E1", fontSize:14, outline:"none", background:"#fff", boxSizing:"border-box" }} />
                 <button onClick={() => setShowNewPatient(true)} style={btnPrimary}>+ Novo Paciente</button>
               </div>
-              {filteredPatients.length === 0 && (
+              {loadingPatients ? (
+                <div style={{ textAlign:"center", padding:60, color:"#94A3B8" }}>
+                  <div style={{ fontSize:48, marginBottom:12 }}>⏳</div>
+                  <div style={{ fontSize:16, fontWeight:600 }}>Carregando pacientes...</div>
+                </div>
+              ) : filteredPatients.length === 0 && (
                 <div style={{ textAlign:"center", padding:60, color:"#94A3B8" }}>
                   <div style={{ fontSize:48, marginBottom:12 }}>🦷</div>
                   <div style={{ fontSize:16, fontWeight:600 }}>Nenhum paciente cadastrado</div>
@@ -1232,19 +2285,23 @@
                           <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
                             {rec.photos.map(ph => (
                               <div key={ph.id} style={{ width:56, height:56, borderRadius:8, overflow:"hidden", border:"1px solid #E2E8F0", cursor:"pointer" }}>
-                                <FileThumb fileId={ph.id} cache={fileCache} loadFn={loadFile} type={ph.type || "image/jpeg"} name={ph.name}
-                                  onClick={async () => { const d = fileCache[ph.id] || await FileDB.get(ph.id); if (d) setViewingPhoto(d); }}
-                                  style={{ borderRadius:8 }} />
+                                {ph.url ? (
+                                  <img src={ph.url} alt={ph.name} onClick={() => setViewingPhoto(ph.url)} style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:8 }} />
+                                ) : (
+                                  <FileThumb fileId={ph.id} cache={fileCache} loadFn={loadFile} type={ph.type || "image/jpeg"} name={ph.name}
+                                    onClick={async () => { const d = fileCache[ph.id] || await FileDB.get(ph.id); if (d) setViewingPhoto(d); }}
+                                    style={{ borderRadius:8 }} />
+                                )}
                               </div>
                             ))}
                           </div>
                         </div>
                       )}
                       {rec.nextAppointment && <div style={{ fontSize:12, color:"#0EA5E9", marginTop:8, fontWeight:600 }}>Próxima consulta: {formatDate(rec.nextAppointment+"T12:00:00")}</div>}
-                      {rec.signature ? (
+                      {(rec.signatureUrl || rec.signature) ? (
                         <div style={{ marginTop:10, paddingTop:10, borderTop:"1px dashed #E2E8F0", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                           <span style={{ fontSize:12, color:"#10B981", fontWeight:600 }}>Assinado</span>
-                          <button onClick={() => setViewingSignature(rec.signature)} style={{ background:"#F0FDF4", border:"1px solid #BBF7D0", borderRadius:6, padding:"4px 10px", fontSize:11, color:"#16A34A", cursor:"pointer", fontWeight:600 }}>Ver assinatura</button>
+                          <button onClick={() => setViewingSignature(rec.signatureUrl || rec.signature)} style={{ background:"#F0FDF4", border:"1px solid #BBF7D0", borderRadius:6, padding:"4px 10px", fontSize:11, color:"#16A34A", cursor:"pointer", fontWeight:600 }}>Ver assinatura</button>
                         </div>
                       ) : (
                         <div style={{ marginTop:8, fontSize:11, color:"#F59E0B", fontWeight:600 }}>Sem assinatura</div>
@@ -1935,11 +2992,33 @@
               )}
             </div>
           </Modal>
+          
+          {/* Sistema de Notificações */}
+          <div style={{ position:"fixed", top:80, right:20, zIndex:9999, display:"flex", flexDirection:"column", gap:10, maxWidth:350 }}>
+            {notifications.map(notif => (
+              <div key={notif.id} style={{
+                background: notif.type === 'success' ? '#ECFDF5' : notif.type === 'warning' ? '#FEF3C7' : '#EFF6FF',
+                border: `1px solid ${notif.type === 'success' ? '#A7F3D0' : notif.type === 'warning' ? '#FDE68A' : '#BFDBFE'}`,
+                borderRadius:10,
+                padding:"12px 16px",
+                fontSize:13,
+                color: notif.type === 'success' ? '#065F46' : notif.type === 'warning' ? '#92400E' : '#1E40AF',
+                fontWeight:600,
+                boxShadow:"0 4px 12px rgba(0,0,0,0.1)",
+                animation:"slideInRight 0.3s ease-out",
+                display:"flex",
+                alignItems:"center",
+                gap:8
+              }}>
+                <span>{notif.type === 'success' ? '✓' : notif.type === 'warning' ? '⚠️' : '🔔'}</span>
+                {notif.message}
+              </div>
+            ))}
+          </div>
         </div>
       );
     }
-
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);;
   </script>
 </body>
 </html>
