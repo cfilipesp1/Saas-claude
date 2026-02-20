@@ -55,6 +55,31 @@
     const ALLOWED_FILE_TYPES = ["image/jpeg","image/png","image/webp","image/gif","application/pdf",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
 
+    const PAYMENT_METHODS = [
+      { value: "dinheiro", label: "Dinheiro", icon: "💵", color: "#10B981" },
+      { value: "pix", label: "PIX", icon: "📱", color: "#8B5CF6" },
+      { value: "cartao_credito", label: "Cartão Crédito", icon: "💳", color: "#3B82F6" },
+      { value: "cartao_debito", label: "Cartão Débito", icon: "💳", color: "#0EA5E9" },
+      { value: "boleto", label: "Boleto", icon: "📄", color: "#F59E0B" },
+      { value: "transferencia", label: "Transferência", icon: "🏦", color: "#6366F1" },
+      { value: "cheque", label: "Cheque", icon: "📝", color: "#78716C" },
+    ];
+    const PAYMENT_METHOD_MAP = Object.fromEntries(PAYMENT_METHODS.map(m => [m.value, m]));
+    const getPaymentLabel = (v) => PAYMENT_METHOD_MAP[v]?.label || v;
+    const getPaymentIcon = (v) => PAYMENT_METHOD_MAP[v]?.icon || "💰";
+    const getPaymentColor = (v) => PAYMENT_METHOD_MAP[v]?.color || "#64748B";
+
+    const BUDGET_STATUSES = [
+      { value: "pendente", label: "Pendente", color: "#F59E0B", bg: "#FEF3C7", border: "#FDE68A" },
+      { value: "aprovado", label: "Aprovado", color: "#10B981", bg: "#D1FAE5", border: "#6EE7B7" },
+      { value: "em_andamento", label: "Em Andamento", color: "#3B82F6", bg: "#DBEAFE", border: "#93C5FD" },
+      { value: "concluido", label: "Concluído", color: "#059669", bg: "#A7F3D0", border: "#34D399" },
+      { value: "cancelado", label: "Cancelado", color: "#EF4444", bg: "#FEE2E2", border: "#FCA5A5" },
+    ];
+    const BUDGET_STATUS_MAP = Object.fromEntries(BUDGET_STATUSES.map(s => [s.value, s]));
+
+    const DEFAULT_FINANCEIRO = { orcamento_total: 0, orcamento_items: [], orcamento_status: "pendente", orcamento_observacoes: "", pagamentos: [] };
+
     const SPECIALTIES = {
       ortodontia: {
         label: "Ortodontia", icon: "🦷", color: "#0EA5E9",
@@ -187,7 +212,7 @@
       responsavelHistory: p.responsavelHistory || [],
       documents: (p.documents || []).map(migrateFileToIDB),
       arrivalControl: p.arrivalControl || null,
-      financeiro: p.financeiro || { orcamento_total: 0, pagamentos: [] },
+      financeiro: { ...DEFAULT_FINANCEIRO, ...(p.financeiro || {}) },
       records: (p.records || []).map(r => ({
         ...r,
         tipo_atendimento: r.tipo_atendimento || (r.specialty === "ortodontia" ? "ORTODONTIA" : "GERAL"),
@@ -471,9 +496,23 @@
       const [pendingRecord, setPendingRecord] = useState(null);
       const [arrivalForm, setArrivalForm] = useState({ dentista_id: "" });
       const [showFinanceiro, setShowFinanceiro] = useState(false);
-      const [financeiroForm, setFinanceiroForm] = useState({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
+      const [financeiroForm, setFinanceiroForm] = useState({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "dinheiro", observacao: "", parcelas: 1 });
       const [editingOrcamento, setEditingOrcamento] = useState(false);
       const [tempOrcamento, setTempOrcamento] = useState("");
+      // Budget items management
+      const [showBudgetModal, setShowBudgetModal] = useState(false);
+      const [budgetPatientId, setBudgetPatientId] = useState(null);
+      const [budgetItems, setBudgetItems] = useState([]);
+      const [budgetObs, setBudgetObs] = useState("");
+      const [budgetItemForm, setBudgetItemForm] = useState({ procedimento: "", dente: "", quantidade: 1, valor_unitario: "", desconto: 0, observacao: "" });
+      const [budgetSearchTerm, setBudgetSearchTerm] = useState("");
+      const [budgetStatusFilter, setBudgetStatusFilter] = useState("todos");
+      // Financial filters
+      const [finDateFrom, setFinDateFrom] = useState("");
+      const [finDateTo, setFinDateTo] = useState("");
+      const [finPaymentFilter, setFinPaymentFilter] = useState("todos");
+      const [finPatientFilter, setFinPatientFilter] = useState("");
+      const [finTab, setFinTab] = useState("dashboard");
       const [showRelatorio, setShowRelatorio] = useState(false);
       const [relatorioFilters, setRelatorioFilters] = useState({ profissional_id: "", data_inicio: formatDateISO(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), data_fim: formatDateISO(new Date()), busca: "" });
       const [relatorioSort, setRelatorioSort] = useState({ field: "date", direction: "desc" });
@@ -624,7 +663,7 @@
                 documents: getLocalData('documents', p.id) || [],
                 responsavelHistory: getLocalData('responsavelHistory', p.id) || [],
                 arrivalControl: getLocalData('arrivalControl', p.id) || null,
-                financeiro: getLocalData('financeiro', p.id) || { orcamento_total: 0, pagamentos: [] },
+                financeiro: { ...DEFAULT_FINANCEIRO, ...(getLocalData('financeiro', p.id) || {}) },
                 createdAt: p.created_at
               };
             });
@@ -776,34 +815,55 @@
         return new Blob([ab], { type: mimeType });
       };
       
-      // ── CRUD Financeiro: Orçamentos (localStorage — tabelas não existem no DB) ──
-      const createOrUpdateBudgetSupabase = async (patientId, totalAmount) => {
+      // ── CRUD Financeiro: Orçamentos ──
+      const createOrUpdateBudgetSupabase = async (patientId, totalAmount, items, status, obs) => {
         try {
-          const financeiro = getLocalData('financeiro', patientId) || { orcamento_total: 0, pagamentos: [] };
+          const financeiro = getLocalData('financeiro', patientId) || { ...DEFAULT_FINANCEIRO };
           financeiro.orcamento_total = parseFloat(totalAmount) || 0;
+          if (items !== undefined) financeiro.orcamento_items = items;
+          if (status !== undefined) financeiro.orcamento_status = status;
+          if (obs !== undefined) financeiro.orcamento_observacoes = obs;
           saveLocalData('financeiro', patientId, financeiro);
-          return { total_amount: financeiro.orcamento_total };
+          return financeiro;
         } catch (err) {
           console.error('Erro ao salvar orçamento:', err);
           return null;
         }
       };
 
+      const updateBudgetStatus = async (patientId, newStatus) => {
+        try {
+          const financeiro = getLocalData('financeiro', patientId) || { ...DEFAULT_FINANCEIRO };
+          financeiro.orcamento_status = newStatus;
+          saveLocalData('financeiro', patientId, financeiro);
+          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, orcamento_status: newStatus}} : p));
+          addAudit("ATUALIZAR_STATUS_ORCAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Status: ${BUDGET_STATUS_MAP[newStatus]?.label || newStatus}`);
+        } catch (err) {
+          console.error('Erro ao atualizar status:', err);
+        }
+      };
+
       const loadBudgetSupabase = async (patientId) => {
-        const financeiro = getLocalData('financeiro', patientId) || { orcamento_total: 0, pagamentos: [] };
+        const financeiro = getLocalData('financeiro', patientId) || { ...DEFAULT_FINANCEIRO };
         return { total_amount: financeiro.orcamento_total };
       };
 
-      // ── CRUD Financeiro: Pagamentos (localStorage — tabela payments não existe no DB) ──
+      // ── CRUD Financeiro: Pagamentos ──
+      const loadPaymentsSupabase = async (patientId) => {
+        const financeiro = getLocalData('financeiro', patientId) || { ...DEFAULT_FINANCEIRO };
+        return financeiro.pagamentos || [];
+      };
+
       const createPaymentSupabase = async (patientId, paymentData) => {
         try {
-          const financeiro = getLocalData('financeiro', patientId) || { orcamento_total: 0, pagamentos: [] };
+          const financeiro = getLocalData('financeiro', patientId) || { ...DEFAULT_FINANCEIRO };
           const newPayment = {
             id: generateId(),
             data: paymentData.data,
             valor: parseFloat(paymentData.valor),
             forma_pagamento: paymentData.forma_pagamento,
             observacao: paymentData.observacao || '',
+            parcelas: parseInt(paymentData.parcelas) || 1,
             registrado_por: currentUser.name,
             registrado_em: new Date().toISOString()
           };
@@ -816,14 +876,8 @@
         }
       };
 
-      const loadPaymentsSupabase = async (patientId) => {
-        const financeiro = getLocalData('financeiro', patientId) || { orcamento_total: 0, pagamentos: [] };
-        return financeiro.pagamentos || [];
-      };
-
       const deletePaymentSupabase = async (paymentId) => {
         try {
-          // Find which patient has this payment
           for (const p of patients) {
             const financeiro = getLocalData('financeiro', p.id);
             if (financeiro && financeiro.pagamentos) {
@@ -1298,12 +1352,15 @@
             }
           }
           
+          const existingFin = getLocalData('financeiro', fresh.id) || {};
           const patientWithRecords = {
             ...fresh,
             records: appointments,
             financeiro: {
-              orcamento_total: budget?.total_amount || 0,
-              pagamentos: payments
+              ...DEFAULT_FINANCEIRO,
+              ...existingFin,
+              orcamento_total: budget?.total_amount || existingFin.orcamento_total || 0,
+              pagamentos: payments.length > 0 ? payments : (existingFin.pagamentos || [])
             }
           };
           
@@ -1407,76 +1464,90 @@
       };
 
       // ── Financeiro ──
-      const saveOrcamento = async (patientId, valor) => {
+      const saveOrcamento = async (patientId, valor, items, status, obs) => {
         try {
-          // Salvar no Supabase
-          await createOrUpdateBudgetSupabase(patientId, valor);
-          
-          // Atualizar estado local
-          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, orcamento_total: parseFloat(valor) || 0}} : p));
+          await createOrUpdateBudgetSupabase(patientId, valor, items, status, obs);
+          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {
+            ...p.financeiro,
+            orcamento_total: parseFloat(valor) || 0,
+            ...(items !== undefined ? { orcamento_items: items } : {}),
+            ...(status !== undefined ? { orcamento_status: status } : {}),
+            ...(obs !== undefined ? { orcamento_observacoes: obs } : {}),
+          }} : p));
           addAudit("ATUALIZAR_ORCAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Orçamento: R$ ${parseFloat(valor).toFixed(2)}`);
           setEditingOrcamento(false);
           setTempOrcamento("");
         } catch (err) {
           console.error('Erro ao salvar orçamento:', err);
-          const msgOrc = err?.message || err?.error_description || JSON.stringify(err);
-          alert('Erro ao salvar orçamento:\n\n' + msgOrc);
+          alert('Erro ao salvar orçamento:\n\n' + (err?.message || JSON.stringify(err)));
         }
+      };
+
+      const saveBudgetFromModal = async (patientId) => {
+        const total = budgetItems.reduce((s, it) => s + ((it.quantidade * it.valor_unitario) - it.desconto), 0);
+        await saveOrcamento(patientId, total, budgetItems, "pendente", budgetObs);
+        setShowBudgetModal(false);
+        setBudgetItems([]);
+        setBudgetObs("");
+        setBudgetItemForm({ procedimento: "", dente: "", quantidade: 1, valor_unitario: "", desconto: 0, observacao: "" });
+      };
+
+      const addBudgetItem = (formData) => {
+        const f = formData || budgetItemForm;
+        if (!f.procedimento || !f.valor_unitario) return;
+        const item = {
+          id: generateId(),
+          procedimento: f.procedimento,
+          dente: f.dente || "",
+          quantidade: parseInt(f.quantidade) || 1,
+          valor_unitario: parseFloat(f.valor_unitario) || 0,
+          desconto: parseFloat(f.desconto) || 0,
+          observacao: f.observacao || "",
+        };
+        setBudgetItems(prev => [...prev, item]);
+        setBudgetItemForm({ procedimento: "", dente: "", quantidade: 1, valor_unitario: "", desconto: 0, observacao: "" });
+      };
+
+      const removeBudgetItem = (itemId) => {
+        setBudgetItems(prev => prev.filter(it => it.id !== itemId));
+      };
+
+      const openBudgetEditor = (patient) => {
+        setBudgetPatientId(patient.id);
+        setBudgetItems(patient.financeiro?.orcamento_items || []);
+        setBudgetObs(patient.financeiro?.orcamento_observacoes || "");
+        setShowBudgetModal(true);
       };
 
       const addPagamento = async (patientId) => {
         if (!financeiroForm.valor || parseFloat(financeiroForm.valor) <= 0) return;
-        
         try {
-          // Criar no Supabase
           const data = await createPaymentSupabase(patientId, financeiroForm);
-          
-          if (!data) {
-            alert('Erro ao adicionar pagamento: retorno vazio do servidor. Verifique o console (F12).');
-            return;
-          }
-          
-          // Transformar para formato local
+          if (!data) { alert('Erro ao adicionar pagamento.'); return; }
           const novoPagamento = {
-            id: data.id,
-            data: data.payment_date,
-            valor: parseFloat(data.amount),
-            forma_pagamento: data.payment_method,
-            observacao: data.notes || '',
-            registrado_por: currentUser.name,
-            registrado_em: data.registered_at
+            id: data.id, data: data.data, valor: data.valor,
+            forma_pagamento: data.forma_pagamento, observacao: data.observacao || '',
+            parcelas: data.parcelas || 1, registrado_por: currentUser.name, registrado_em: data.registrado_em
           };
-          
-          // Atualizar estado local
           setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: [...p.financeiro.pagamentos, novoPagamento]}} : p));
-          addAudit("ADICIONAR_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Valor: R$ ${novoPagamento.valor.toFixed(2)} - ${novoPagamento.forma_pagamento === "avista" ? "À vista" : "Parcelado"}`);
-          setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
+          addAudit("ADICIONAR_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`R$ ${novoPagamento.valor.toFixed(2)} - ${getPaymentLabel(novoPagamento.forma_pagamento)}`);
+          setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "dinheiro", observacao: "", parcelas: 1 });
         } catch (err) {
           console.error('Erro ao adicionar pagamento:', err);
-          const msgPag = err?.message || err?.error_description || JSON.stringify(err);
-          alert('Erro ao adicionar pagamento:\n\n' + msgPag);
+          alert('Erro ao adicionar pagamento:\n\n' + (err?.message || JSON.stringify(err)));
         }
       };
 
       const removePagamento = async (patientId, pagamentoId) => {
         if (!confirm("Deseja realmente remover este pagamento?")) return;
-        
         try {
-          // Deletar do Supabase
           const success = await deletePaymentSupabase(pagamentoId);
-          
-          if (!success) {
-            alert('Erro ao remover pagamento: operação falhou. Verifique o console (F12).');
-            return;
-          }
-          
-          // Atualizar estado local
+          if (!success) { alert('Erro ao remover pagamento.'); return; }
           setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: p.financeiro.pagamentos.filter(pg => pg.id !== pagamentoId)}} : p));
           addAudit("REMOVER_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"","");
         } catch (err) {
           console.error('Erro ao remover pagamento:', err);
-          const msgRemPag = err?.message || err?.error_description || JSON.stringify(err);
-          alert('Erro ao remover pagamento:\n\n' + msgRemPag);
+          alert('Erro ao remover pagamento:\n\n' + (err?.message || JSON.stringify(err)));
         }
       };
 
@@ -1826,7 +1897,7 @@
               )}
               {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION" || currentUser.role === "MANAGER") && (
                 <button onClick={() => setView("budgets")} style={{ background: view==="budgets"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>
-                  📋 Orçamentos
+                  📋 Funil de Orçamentos
                 </button>
               )}
               {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION" || currentUser.role === "MANAGER") && (
@@ -1963,8 +2034,11 @@
               <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
                 <button onClick={() => { setAnamnesisForm({...defaultAnamnesis, ...selectedPatient.anamnesis}); setShowAnamnesis(true); setEditingAnamnesis(false); }} style={btnSecondary}>Anamnese</button>
                 <button onClick={() => { docInputRef.current?.click(); }} style={btnSecondary}>Anexar Documento</button>
-                {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && (
-                  <button onClick={() => setShowFinanceiro(true)} style={{...btnSecondary, background:"linear-gradient(135deg,#10B981,#059669)", color:"#fff"}}>💰 Financeiro</button>
+                {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION" || currentUser.role === "MANAGER") && (
+                  <React.Fragment>
+                    <button onClick={() => openBudgetEditor(selectedPatient)} style={{...btnSecondary, background:"linear-gradient(135deg,#3B82F6,#1D4ED8)", color:"#fff"}}>📋 Orçamentos</button>
+                    <button onClick={() => setShowFinanceiro(true)} style={{...btnSecondary, background:"linear-gradient(135deg,#10B981,#059669)", color:"#fff"}}>💰 Financeiro</button>
+                  </React.Fragment>
                 )}
                 <button onClick={() => setShowNewRecord(true)} style={btnPrimary}>+ Novo Atendimento</button>
                 <input ref={docInputRef} type="file" accept="image/*,.pdf,.docx" multiple onChange={handleDocUpload} style={{ display:"none" }} />
@@ -2254,18 +2328,29 @@
 
           {/* ═══ BUDGETS VIEW ═══ */}
           {view === "budgets" && (
-            <div style={{ padding:"20px 24px", maxWidth:1000, margin:"0 auto" }}>
-              <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A", marginBottom:16 }}>📋 Orçamentos</h2>
+            <div style={{ padding:"20px 24px", maxWidth:1100, margin:"0 auto" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+                <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A" }}>📋 Funil de Orçamentos</h2>
+              </div>
 
               {(() => {
                 const budgetData = patients.map(p => {
-                  const fin = p.financeiro || getLocalData('financeiro', p.id) || { orcamento_total: 0, pagamentos: [] };
+                  const fin = p.financeiro || { ...DEFAULT_FINANCEIRO };
                   const totalPago = (fin.pagamentos || []).reduce((s, pg) => s + pg.valor, 0);
                   const saldo = fin.orcamento_total - totalPago;
-                  const status = fin.orcamento_total === 0 ? "sem_orcamento" : (saldo <= 0 ? "pago" : (totalPago > 0 ? "parcial" : "aberto"));
-                  return { ...p, orcamento: fin.orcamento_total, totalPago, saldo, status, pagamentos: fin.pagamentos || [] };
+                  const bStatus = fin.orcamento_status || (fin.orcamento_total === 0 ? "sem_orcamento" : "pendente");
+                  const payStatus = fin.orcamento_total === 0 ? "sem_orcamento" : (saldo <= 0 ? "pago" : (totalPago > 0 ? "parcial" : "aberto"));
+                  return { ...p, orcamento: fin.orcamento_total, totalPago, saldo, budgetStatus: bStatus, payStatus, pagamentos: fin.pagamentos || [], items: fin.orcamento_items || [] };
                 });
                 const comOrcamento = budgetData.filter(b => b.orcamento > 0);
+                let filtered = comOrcamento;
+                if (budgetSearchTerm) {
+                  const s = budgetSearchTerm.toLowerCase();
+                  filtered = filtered.filter(b => b.name?.toLowerCase().includes(s) || b.codigo?.toLowerCase().includes(s));
+                }
+                if (budgetStatusFilter !== "todos") {
+                  filtered = filtered.filter(b => b.budgetStatus === budgetStatusFilter);
+                }
                 const totalOrcamentos = comOrcamento.reduce((s, b) => s + b.orcamento, 0);
                 const totalPagoGeral = comOrcamento.reduce((s, b) => s + b.totalPago, 0);
                 const totalAberto = comOrcamento.reduce((s, b) => s + Math.max(0, b.saldo), 0);
@@ -2273,69 +2358,99 @@
                 return (
                   <div>
                     {/* Summary Cards */}
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:12, marginBottom:20 }}>
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(180px, 1fr))", gap:12, marginBottom:16 }}>
                       <div style={{ ...cardStyle, background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderColor:"#3B82F6" }}>
-                        <div style={{ fontSize:12, fontWeight:600, color:"#1E40AF", marginBottom:4 }}>📋 Total de Orçamentos</div>
-                        <div style={{ fontSize:28, fontWeight:800, color:"#1E40AF" }}>{comOrcamento.length}</div>
+                        <div style={{ fontSize:11, fontWeight:600, color:"#1E40AF", marginBottom:4 }}>📋 Total Orçamentos</div>
+                        <div style={{ fontSize:26, fontWeight:800, color:"#1E40AF" }}>{comOrcamento.length}</div>
                       </div>
                       <div style={{ ...cardStyle, background:"linear-gradient(135deg,#F0F9FF,#E0F2FE)", borderColor:"#0EA5E9" }}>
-                        <div style={{ fontSize:12, fontWeight:600, color:"#0369A1", marginBottom:4 }}>💵 Valor Total</div>
-                        <div style={{ fontSize:22, fontWeight:800, color:"#0EA5E9" }}>R$ {totalOrcamentos.toFixed(2).replace(".",",")}</div>
+                        <div style={{ fontSize:11, fontWeight:600, color:"#0369A1", marginBottom:4 }}>💵 Valor Total</div>
+                        <div style={{ fontSize:20, fontWeight:800, color:"#0EA5E9" }}>R$ {totalOrcamentos.toFixed(2).replace(".",",")}</div>
                       </div>
                       <div style={{ ...cardStyle, background:"#F0FDF4", borderColor:"#10B981" }}>
-                        <div style={{ fontSize:12, fontWeight:600, color:"#059669", marginBottom:4 }}>✓ Recebido</div>
-                        <div style={{ fontSize:22, fontWeight:800, color:"#10B981" }}>R$ {totalPagoGeral.toFixed(2).replace(".",",")}</div>
+                        <div style={{ fontSize:11, fontWeight:600, color:"#059669", marginBottom:4 }}>✓ Recebido</div>
+                        <div style={{ fontSize:20, fontWeight:800, color:"#10B981" }}>R$ {totalPagoGeral.toFixed(2).replace(".",",")}</div>
                       </div>
                       <div style={{ ...cardStyle, background:"#FEF2F2", borderColor:"#EF4444" }}>
-                        <div style={{ fontSize:12, fontWeight:600, color:"#DC2626", marginBottom:4 }}>⚠️ Em Aberto</div>
-                        <div style={{ fontSize:22, fontWeight:800, color:"#EF4444" }}>R$ {totalAberto.toFixed(2).replace(".",",")}</div>
+                        <div style={{ fontSize:11, fontWeight:600, color:"#DC2626", marginBottom:4 }}>⚠️ Em Aberto</div>
+                        <div style={{ fontSize:20, fontWeight:800, color:"#EF4444" }}>R$ {totalAberto.toFixed(2).replace(".",",")}</div>
+                      </div>
+                    </div>
+
+                    {/* Filters */}
+                    <div style={{ ...cardStyle, marginBottom:16, padding:14 }}>
+                      <div style={{ display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
+                        <div style={{ flex:1, minWidth:200 }}>
+                          <input value={budgetSearchTerm} onChange={e => setBudgetSearchTerm(e.target.value)} placeholder="Buscar paciente..." style={{ width:"100%", padding:"8px 12px", borderRadius:8, border:"1.5px solid #E2E8F0", fontSize:13, outline:"none" }} />
+                        </div>
+                        <select value={budgetStatusFilter} onChange={e => setBudgetStatusFilter(e.target.value)} style={{ padding:"8px 12px", borderRadius:8, border:"1.5px solid #E2E8F0", fontSize:13, background:"#fff", cursor:"pointer" }}>
+                          <option value="todos">Todos os Status</option>
+                          {BUDGET_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                        </select>
                       </div>
                     </div>
 
                     {/* Budget List */}
-                    {comOrcamento.length === 0 ? (
+                    {filtered.length === 0 ? (
                       <div style={{ textAlign:"center", padding:60, color:"#94A3B8", background:"#F8FAFC", borderRadius:12, border:"1px solid #E2E8F0" }}>
                         <div style={{ fontSize:48, marginBottom:8 }}>📋</div>
-                        <div style={{ fontSize:16, fontWeight:600 }}>Nenhum orçamento cadastrado</div>
-                        <div style={{ fontSize:13, marginTop:4 }}>Abra a ficha de um paciente e clique em "Financeiro" para criar um orçamento.</div>
+                        <div style={{ fontSize:16, fontWeight:600 }}>{comOrcamento.length === 0 ? "Nenhum orçamento cadastrado" : "Nenhum resultado encontrado"}</div>
+                        <div style={{ fontSize:13, marginTop:4 }}>
+                          {comOrcamento.length === 0 ? "Abra a ficha de um paciente e clique em \"Financeiro\" para criar um orçamento." : "Tente alterar os filtros de busca."}
+                        </div>
                       </div>
                     ) : (
-                      <div style={{ ...cardStyle }}>
-                        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:14 }}>
+                      <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
+                        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                           <thead>
-                            <tr style={{ borderBottom:"2px solid #E2E8F0" }}>
-                              <th style={{ padding:"10px 8px", textAlign:"left", fontWeight:700, color:"#475569" }}>Paciente</th>
-                              <th style={{ padding:"10px 8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Orçamento</th>
-                              <th style={{ padding:"10px 8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Pago</th>
-                              <th style={{ padding:"10px 8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Saldo</th>
-                              <th style={{ padding:"10px 8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Status</th>
-                              <th style={{ padding:"10px 8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Ações</th>
+                            <tr style={{ background:"#F8FAFC", borderBottom:"2px solid #E2E8F0" }}>
+                              <th style={{ padding:"12px 12px", textAlign:"left", fontWeight:700, color:"#475569" }}>Paciente</th>
+                              <th style={{ padding:"12px 8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Itens</th>
+                              <th style={{ padding:"12px 8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Orçamento</th>
+                              <th style={{ padding:"12px 8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Pago</th>
+                              <th style={{ padding:"12px 8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Saldo</th>
+                              <th style={{ padding:"12px 8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Status Orç.</th>
+                              <th style={{ padding:"12px 8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Pgto</th>
+                              <th style={{ padding:"12px 8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Ações</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {comOrcamento.sort((a,b) => b.saldo - a.saldo).map(b => (
-                              <tr key={b.id} style={{ borderBottom:"1px solid #F1F5F9" }}>
-                                <td style={{ padding:"12px 8px" }}>
-                                  <div style={{ fontWeight:600 }}>{b.name}</div>
-                                  {b.codigo && <div style={{ fontSize:11, color:"#94A3B8" }}>{b.codigo}</div>}
-                                </td>
-                                <td style={{ padding:"12px 8px", textAlign:"right", fontWeight:700, color:"#1E40AF" }}>R$ {b.orcamento.toFixed(2).replace(".",",")}</td>
-                                <td style={{ padding:"12px 8px", textAlign:"right", fontWeight:600, color:"#10B981" }}>R$ {b.totalPago.toFixed(2).replace(".",",")}</td>
-                                <td style={{ padding:"12px 8px", textAlign:"right", fontWeight:700, color: b.saldo > 0 ? "#EF4444" : "#10B981" }}>R$ {Math.abs(b.saldo).toFixed(2).replace(".",",")}</td>
-                                <td style={{ padding:"12px 8px", textAlign:"center" }}>
-                                  <span style={{ fontSize:11, fontWeight:700, padding:"3px 10px", borderRadius:8,
-                                    background: b.status==="pago" ? "#D1FAE5" : b.status==="parcial" ? "#FEF3C7" : "#FEE2E2",
-                                    color: b.status==="pago" ? "#059669" : b.status==="parcial" ? "#D97706" : "#DC2626",
-                                    border: `1px solid ${b.status==="pago" ? "#6EE7B7" : b.status==="parcial" ? "#FDE68A" : "#FCA5A5"}`
-                                  }}>
-                                    {b.status==="pago" ? "Quitado" : b.status==="parcial" ? "Parcial" : "Em Aberto"}
-                                  </span>
-                                </td>
-                                <td style={{ padding:"12px 8px", textAlign:"center" }}>
-                                  <button onClick={() => { setSelectedPatient(b); setShowFinanceiro(true); }} style={{ ...btnSecondary, fontSize:11, padding:"4px 12px" }}>Ver Detalhes</button>
-                                </td>
-                              </tr>
-                            ))}
+                            {filtered.sort((a,b) => b.saldo - a.saldo).map(b => {
+                              const bs = BUDGET_STATUS_MAP[b.budgetStatus] || BUDGET_STATUS_MAP["pendente"];
+                              return (
+                                <tr key={b.id} style={{ borderBottom:"1px solid #F1F5F9" }}>
+                                  <td style={{ padding:"12px 12px" }}>
+                                    <div style={{ fontWeight:600 }}>{b.name}</div>
+                                    {b.codigo && <div style={{ fontSize:11, color:"#94A3B8" }}>{b.codigo}</div>}
+                                  </td>
+                                  <td style={{ padding:"12px 8px", textAlign:"center", color:"#64748B" }}>{b.items.length}</td>
+                                  <td style={{ padding:"12px 8px", textAlign:"right", fontWeight:700, color:"#1E40AF" }}>R$ {b.orcamento.toFixed(2).replace(".",",")}</td>
+                                  <td style={{ padding:"12px 8px", textAlign:"right", fontWeight:600, color:"#10B981" }}>R$ {b.totalPago.toFixed(2).replace(".",",")}</td>
+                                  <td style={{ padding:"12px 8px", textAlign:"right", fontWeight:700, color: b.saldo > 0 ? "#EF4444" : "#10B981" }}>R$ {Math.abs(b.saldo).toFixed(2).replace(".",",")}</td>
+                                  <td style={{ padding:"12px 8px", textAlign:"center" }}>
+                                    <span style={{ fontSize:10, fontWeight:700, padding:"3px 8px", borderRadius:6, background:bs.bg, color:bs.color, border:`1px solid ${bs.border}` }}>{bs.label}</span>
+                                  </td>
+                                  <td style={{ padding:"12px 8px", textAlign:"center" }}>
+                                    <span style={{ fontSize:10, fontWeight:700, padding:"3px 8px", borderRadius:6,
+                                      background: b.payStatus==="pago" ? "#D1FAE5" : b.payStatus==="parcial" ? "#FEF3C7" : "#FEE2E2",
+                                      color: b.payStatus==="pago" ? "#059669" : b.payStatus==="parcial" ? "#D97706" : "#DC2626",
+                                      border: `1px solid ${b.payStatus==="pago" ? "#6EE7B7" : b.payStatus==="parcial" ? "#FDE68A" : "#FCA5A5"}`
+                                    }}>
+                                      {b.payStatus==="pago" ? "Quitado" : b.payStatus==="parcial" ? "Parcial" : "Em Aberto"}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding:"12px 8px", textAlign:"center" }}>
+                                    <div style={{ display:"flex", gap:4, justifyContent:"center" }}>
+                                      <button onClick={() => openBudgetEditor(b)} style={{ ...btnSecondary, fontSize:10, padding:"4px 8px" }} title="Editar Orçamento">✏️</button>
+                                      <button onClick={() => { setSelectedPatient(b); setShowFinanceiro(true); }} style={{ ...btnSecondary, fontSize:10, padding:"4px 8px" }} title="Financeiro">💰</button>
+                                      {b.budgetStatus === "pendente" && (
+                                        <button onClick={() => updateBudgetStatus(b.id, "aprovado")} style={{ ...btnSecondary, fontSize:10, padding:"4px 8px", background:"#D1FAE5", color:"#059669", border:"1px solid #6EE7B7" }} title="Aprovar">✓</button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -2348,7 +2463,7 @@
 
           {/* ═══ FINANCIAL VIEW ═══ */}
           {view === "financial" && (
-            <div style={{ padding:"20px 24px", maxWidth:1000, margin:"0 auto" }}>
+            <div style={{ padding:"20px 24px", maxWidth:1100, margin:"0 auto" }}>
               <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A", marginBottom:16 }}>💰 Financeiro</h2>
 
               {(() => {
@@ -2357,7 +2472,7 @@
                 let totalPagoGeral = 0;
 
                 patients.forEach(p => {
-                  const fin = p.financeiro || getLocalData('financeiro', p.id) || { orcamento_total: 0, pagamentos: [] };
+                  const fin = p.financeiro || { ...DEFAULT_FINANCEIRO };
                   totalOrcamentos += fin.orcamento_total || 0;
                   (fin.pagamentos || []).forEach(pg => {
                     totalPagoGeral += pg.valor;
@@ -2366,9 +2481,20 @@
                 });
 
                 const totalAberto = totalOrcamentos - totalPagoGeral;
-                const sortedPayments = allPayments.sort((a, b) => new Date(b.data) - new Date(a.data));
 
-                // Agrupar por forma de pagamento
+                // Apply filters to payments
+                let filteredPayments = [...allPayments];
+                if (finDateFrom) filteredPayments = filteredPayments.filter(pg => pg.data >= finDateFrom);
+                if (finDateTo) filteredPayments = filteredPayments.filter(pg => pg.data <= finDateTo);
+                if (finPaymentFilter !== "todos") filteredPayments = filteredPayments.filter(pg => pg.forma_pagamento === finPaymentFilter);
+                if (finPatientFilter) {
+                  const s = finPatientFilter.toLowerCase();
+                  filteredPayments = filteredPayments.filter(pg => pg.patientName?.toLowerCase().includes(s));
+                }
+                const sortedPayments = filteredPayments.sort((a, b) => new Date(b.data) - new Date(a.data));
+                const filteredTotal = filteredPayments.reduce((s, pg) => s + pg.valor, 0);
+
+                // Group by payment method
                 const byForma = {};
                 allPayments.forEach(pg => {
                   const key = pg.forma_pagamento || "outros";
@@ -2377,7 +2503,7 @@
                   byForma[key].count++;
                 });
 
-                // Receita por mês (últimos 6 meses)
+                // Monthly revenue (last 6 months)
                 const monthlyData = {};
                 const now = new Date();
                 for (let i = 5; i >= 0; i--) {
@@ -2392,94 +2518,239 @@
                 });
                 const maxMonthly = Math.max(...Object.values(monthlyData), 1);
 
+                // Patients with debt
+                const devedores = patients.filter(p => {
+                  const fin = p.financeiro || { ...DEFAULT_FINANCEIRO };
+                  return fin.orcamento_total > 0 && fin.orcamento_total > (fin.pagamentos || []).reduce((s, pg) => s + pg.valor, 0);
+                }).map(p => {
+                  const fin = p.financeiro;
+                  const pago = (fin.pagamentos || []).reduce((s, pg) => s + pg.valor, 0);
+                  return { ...p, orcamento: fin.orcamento_total, pago, saldo: fin.orcamento_total - pago };
+                }).sort((a, b) => b.saldo - a.saldo);
+
                 return (
                   <div>
                     {/* Summary Cards */}
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:12, marginBottom:20 }}>
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(180px, 1fr))", gap:12, marginBottom:16 }}>
                       <div style={{ ...cardStyle, background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderColor:"#3B82F6" }}>
-                        <div style={{ fontSize:12, fontWeight:600, color:"#1E40AF", marginBottom:4 }}>💵 Total Orçado</div>
-                        <div style={{ fontSize:22, fontWeight:800, color:"#1E40AF" }}>R$ {totalOrcamentos.toFixed(2).replace(".",",")}</div>
+                        <div style={{ fontSize:11, fontWeight:600, color:"#1E40AF", marginBottom:4 }}>💵 Total Orçado</div>
+                        <div style={{ fontSize:20, fontWeight:800, color:"#1E40AF" }}>R$ {totalOrcamentos.toFixed(2).replace(".",",")}</div>
                       </div>
                       <div style={{ ...cardStyle, background:"#F0FDF4", borderColor:"#10B981" }}>
-                        <div style={{ fontSize:12, fontWeight:600, color:"#059669", marginBottom:4 }}>✓ Total Recebido</div>
-                        <div style={{ fontSize:22, fontWeight:800, color:"#10B981" }}>R$ {totalPagoGeral.toFixed(2).replace(".",",")}</div>
+                        <div style={{ fontSize:11, fontWeight:600, color:"#059669", marginBottom:4 }}>✓ Total Recebido</div>
+                        <div style={{ fontSize:20, fontWeight:800, color:"#10B981" }}>R$ {totalPagoGeral.toFixed(2).replace(".",",")}</div>
                       </div>
                       <div style={{ ...cardStyle, background: totalAberto > 0 ? "#FEF2F2" : "#F0FDF4", borderColor: totalAberto > 0 ? "#EF4444" : "#10B981" }}>
-                        <div style={{ fontSize:12, fontWeight:600, color: totalAberto > 0 ? "#DC2626" : "#059669", marginBottom:4 }}>{totalAberto > 0 ? "⚠️ A Receber" : "✓ Tudo Recebido"}</div>
-                        <div style={{ fontSize:22, fontWeight:800, color: totalAberto > 0 ? "#EF4444" : "#10B981" }}>R$ {Math.abs(totalAberto).toFixed(2).replace(".",",")}</div>
+                        <div style={{ fontSize:11, fontWeight:600, color: totalAberto > 0 ? "#DC2626" : "#059669", marginBottom:4 }}>{totalAberto > 0 ? "⚠️ A Receber" : "✓ Tudo Recebido"}</div>
+                        <div style={{ fontSize:20, fontWeight:800, color: totalAberto > 0 ? "#EF4444" : "#10B981" }}>R$ {Math.abs(totalAberto).toFixed(2).replace(".",",")}</div>
                       </div>
                       <div style={{ ...cardStyle, background:"linear-gradient(135deg,#F5F3FF,#EDE9FE)", borderColor:"#8B5CF6" }}>
-                        <div style={{ fontSize:12, fontWeight:600, color:"#6D28D9", marginBottom:4 }}>📊 Total Pagamentos</div>
-                        <div style={{ fontSize:28, fontWeight:800, color:"#8B5CF6" }}>{allPayments.length}</div>
+                        <div style={{ fontSize:11, fontWeight:600, color:"#6D28D9", marginBottom:4 }}>📊 Pagamentos</div>
+                        <div style={{ fontSize:26, fontWeight:800, color:"#8B5CF6" }}>{allPayments.length}</div>
                       </div>
                     </div>
 
-                    {/* Receita Mensal (bar chart simples) */}
-                    <div style={{ ...cardStyle, marginBottom:20 }}>
-                      <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:16 }}>📈 Receita Mensal (últimos 6 meses)</div>
-                      <div style={{ display:"flex", alignItems:"flex-end", gap:8, height:120 }}>
-                        {Object.entries(monthlyData).map(([month, value]) => (
-                          <div key={month} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
-                            <div style={{ fontSize:11, fontWeight:700, color:"#10B981" }}>{value > 0 ? `R$${(value/1000).toFixed(1)}k` : ""}</div>
-                            <div style={{ width:"100%", background:"linear-gradient(180deg,#10B981,#059669)", borderRadius:"6px 6px 0 0", height: `${Math.max((value/maxMonthly)*90, value > 0 ? 8 : 2)}px`, transition:"height 0.3s" }}></div>
-                            <div style={{ fontSize:10, color:"#94A3B8", fontWeight:600 }}>{month.split("-")[1]}/{month.split("-")[0].slice(2)}</div>
-                          </div>
-                        ))}
-                      </div>
+                    {/* Tabs */}
+                    <div style={{ display:"flex", gap:0, marginBottom:16, borderBottom:"2px solid #E2E8F0" }}>
+                      {[{k:"dashboard",l:"📊 Dashboard"},{k:"pagamentos",l:"💳 Pagamentos"},{k:"contas",l:"📋 Contas a Receber"}].map(t => (
+                        <button key={t.k} onClick={() => setFinTab(t.k)} className={`tab-btn ${finTab === t.k ? "active" : ""}`}>{t.l}</button>
+                      ))}
                     </div>
 
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr 2fr", gap:16 }}>
-                      {/* Por Forma de Pagamento */}
-                      <div style={{ ...cardStyle }}>
-                        <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12 }}>💳 Por Forma de Pagamento</div>
-                        {Object.keys(byForma).length === 0 ? (
-                          <div style={{ textAlign:"center", padding:20, color:"#94A3B8", fontSize:13 }}>Sem dados</div>
-                        ) : (
-                          Object.entries(byForma).map(([forma, data]) => (
-                            <div key={forma} style={{ padding:10, background:"#F8FAFC", borderRadius:8, marginBottom:8, border:"1px solid #E2E8F0" }}>
-                              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
-                                <span style={{ fontSize:13, fontWeight:600 }}>{forma === "avista" ? "À Vista" : forma === "parcelado" ? "Parcelado" : forma}</span>
-                                <span style={{ fontSize:13, fontWeight:700, color:"#10B981" }}>R$ {data.total.toFixed(2).replace(".",",")}</span>
-                              </div>
-                              <div style={{ fontSize:11, color:"#94A3B8" }}>{data.count} pagamento(s)</div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-
-                      {/* Últimos Pagamentos */}
-                      <div style={{ ...cardStyle }}>
-                        <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12 }}>🕐 Últimos Pagamentos</div>
-                        {sortedPayments.length === 0 ? (
-                          <div style={{ textAlign:"center", padding:40, color:"#94A3B8" }}>
-                            <div style={{ fontSize:48, marginBottom:8 }}>💰</div>
-                            <div style={{ fontSize:14, fontWeight:600 }}>Nenhum pagamento registrado</div>
-                          </div>
-                        ) : (
-                          <div style={{ maxHeight:400, overflowY:"auto" }}>
-                            {sortedPayments.slice(0, 20).map(pg => (
-                              <div key={pg.id} style={{ padding:10, background:"#F8FAFC", borderRadius:8, marginBottom:8, border:"1px solid #E2E8F0" }}>
-                                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
-                                  <div>
-                                    <div style={{ fontSize:13, fontWeight:700 }}>{pg.patientName}</div>
-                                    <div style={{ fontSize:11, color:"#64748B" }}>
-                                      📅 {formatDate(pg.data)}
-                                      {pg.observacao && ` · ${pg.observacao}`}
-                                    </div>
-                                  </div>
-                                  <div style={{ textAlign:"right" }}>
-                                    <div style={{ fontSize:15, fontWeight:800, color:"#10B981" }}>R$ {pg.valor.toFixed(2).replace(".",",")}</div>
-                                    <span style={{ fontSize:10, fontWeight:700, color:pg.forma_pagamento === "avista" ? "#0EA5E9" : "#F59E0B", background:pg.forma_pagamento === "avista" ? "#EFF6FF" : "#FEF3C7", border:`1px solid ${pg.forma_pagamento === "avista" ? "#BFDBFE" : "#FDE68A"}`, borderRadius:6, padding:"1px 6px" }}>
-                                      {pg.forma_pagamento === "avista" ? "À Vista" : "Parcelado"}
-                                    </span>
-                                  </div>
-                                </div>
+                    {/* Dashboard Tab */}
+                    {finTab === "dashboard" && (
+                      <div>
+                        {/* Monthly Chart */}
+                        <div style={{ ...cardStyle, marginBottom:16 }}>
+                          <div style={{ fontSize:15, fontWeight:700, color:"#0F172A", marginBottom:14 }}>📈 Receita Mensal (últimos 6 meses)</div>
+                          <div style={{ display:"flex", alignItems:"flex-end", gap:10, height:140, padding:"0 8px" }}>
+                            {Object.entries(monthlyData).map(([month, value]) => (
+                              <div key={month} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+                                <div style={{ fontSize:11, fontWeight:700, color:"#10B981" }}>{value > 0 ? `R$${value >= 1000 ? (value/1000).toFixed(1)+"k" : value.toFixed(0)}` : ""}</div>
+                                <div style={{ width:"100%", maxWidth:60, background:"linear-gradient(180deg,#10B981,#059669)", borderRadius:"6px 6px 0 0", height: `${Math.max((value/maxMonthly)*100, value > 0 ? 8 : 2)}px`, transition:"height 0.3s" }}></div>
+                                <div style={{ fontSize:10, color:"#94A3B8", fontWeight:600 }}>{month.split("-")[1]}/{month.split("-")[0].slice(2)}</div>
                               </div>
                             ))}
                           </div>
+                        </div>
+
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+                          {/* By Payment Method */}
+                          <div style={{ ...cardStyle }}>
+                            <div style={{ fontSize:15, fontWeight:700, color:"#0F172A", marginBottom:12 }}>💳 Por Forma de Pagamento</div>
+                            {Object.keys(byForma).length === 0 ? (
+                              <div style={{ textAlign:"center", padding:20, color:"#94A3B8", fontSize:13 }}>Sem dados</div>
+                            ) : (
+                              Object.entries(byForma).sort((a,b) => b[1].total - a[1].total).map(([forma, data]) => {
+                                const pct = totalPagoGeral > 0 ? (data.total / totalPagoGeral * 100) : 0;
+                                return (
+                                  <div key={forma} style={{ padding:10, background:"#F8FAFC", borderRadius:8, marginBottom:8, border:"1px solid #E2E8F0" }}>
+                                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                                      <span style={{ fontSize:13, fontWeight:600 }}>{getPaymentIcon(forma)} {getPaymentLabel(forma)}</span>
+                                      <span style={{ fontSize:13, fontWeight:700, color: getPaymentColor(forma) }}>R$ {data.total.toFixed(2).replace(".",",")}</span>
+                                    </div>
+                                    <div style={{ height:6, background:"#E2E8F0", borderRadius:3, overflow:"hidden" }}>
+                                      <div style={{ height:"100%", width:`${pct}%`, background: getPaymentColor(forma), borderRadius:3, transition:"width 0.3s" }}></div>
+                                    </div>
+                                    <div style={{ fontSize:11, color:"#94A3B8", marginTop:4 }}>{data.count} pagamento(s) — {pct.toFixed(1)}%</div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+
+                          {/* Top Debtors */}
+                          <div style={{ ...cardStyle }}>
+                            <div style={{ fontSize:15, fontWeight:700, color:"#0F172A", marginBottom:12 }}>⚠️ Contas a Receber (top 10)</div>
+                            {devedores.length === 0 ? (
+                              <div style={{ textAlign:"center", padding:20, color:"#10B981", fontSize:13, fontWeight:600 }}>Todas as contas estão em dia!</div>
+                            ) : (
+                              <div style={{ maxHeight:300, overflowY:"auto" }}>
+                                {devedores.slice(0, 10).map(d => (
+                                  <div key={d.id} style={{ padding:10, background:"#FEF2F2", borderRadius:8, marginBottom:6, border:"1px solid #FECACA" }}>
+                                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                                      <div>
+                                        <div style={{ fontSize:13, fontWeight:600 }}>{d.name}</div>
+                                        <div style={{ fontSize:11, color:"#64748B" }}>Orçamento: R$ {d.orcamento.toFixed(2).replace(".",",")} | Pago: R$ {d.pago.toFixed(2).replace(".",",")}</div>
+                                      </div>
+                                      <div style={{ fontSize:15, fontWeight:800, color:"#EF4444" }}>R$ {d.saldo.toFixed(2).replace(".",",")}</div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Payments Tab */}
+                    {finTab === "pagamentos" && (
+                      <div>
+                        {/* Filters */}
+                        <div style={{ ...cardStyle, marginBottom:16, padding:14 }}>
+                          <div style={{ fontSize:13, fontWeight:700, color:"#475569", marginBottom:10 }}>Filtros</div>
+                          <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+                            <div>
+                              <label style={{ fontSize:11, fontWeight:600, color:"#64748B", display:"block", marginBottom:2 }}>De</label>
+                              <input type="date" value={finDateFrom} onChange={e => setFinDateFrom(e.target.value)} style={{ padding:"6px 10px", borderRadius:8, border:"1.5px solid #E2E8F0", fontSize:12 }} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize:11, fontWeight:600, color:"#64748B", display:"block", marginBottom:2 }}>Até</label>
+                              <input type="date" value={finDateTo} onChange={e => setFinDateTo(e.target.value)} style={{ padding:"6px 10px", borderRadius:8, border:"1.5px solid #E2E8F0", fontSize:12 }} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize:11, fontWeight:600, color:"#64748B", display:"block", marginBottom:2 }}>Forma</label>
+                              <select value={finPaymentFilter} onChange={e => setFinPaymentFilter(e.target.value)} style={{ padding:"6px 10px", borderRadius:8, border:"1.5px solid #E2E8F0", fontSize:12, background:"#fff" }}>
+                                <option value="todos">Todas</option>
+                                {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                              </select>
+                            </div>
+                            <div style={{ flex:1, minWidth:150 }}>
+                              <label style={{ fontSize:11, fontWeight:600, color:"#64748B", display:"block", marginBottom:2 }}>Paciente</label>
+                              <input value={finPatientFilter} onChange={e => setFinPatientFilter(e.target.value)} placeholder="Buscar paciente..." style={{ width:"100%", padding:"6px 10px", borderRadius:8, border:"1.5px solid #E2E8F0", fontSize:12 }} />
+                            </div>
+                            {(finDateFrom || finDateTo || finPaymentFilter !== "todos" || finPatientFilter) && (
+                              <button onClick={() => { setFinDateFrom(""); setFinDateTo(""); setFinPaymentFilter("todos"); setFinPatientFilter(""); }} style={{ ...btnSecondary, fontSize:11, padding:"6px 12px", marginTop:14 }}>Limpar</button>
+                            )}
+                          </div>
+                          {filteredPayments.length !== allPayments.length && (
+                            <div style={{ marginTop:8, fontSize:12, color:"#64748B" }}>
+                              Mostrando {filteredPayments.length} de {allPayments.length} pagamentos — Total filtrado: <strong style={{ color:"#10B981" }}>R$ {filteredTotal.toFixed(2).replace(".",",")}</strong>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Payments List */}
+                        <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
+                          {sortedPayments.length === 0 ? (
+                            <div style={{ textAlign:"center", padding:40, color:"#94A3B8" }}>
+                              <div style={{ fontSize:48, marginBottom:8 }}>💰</div>
+                              <div style={{ fontSize:14, fontWeight:600 }}>Nenhum pagamento encontrado</div>
+                            </div>
+                          ) : (
+                            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                              <thead>
+                                <tr style={{ background:"#F8FAFC", borderBottom:"2px solid #E2E8F0" }}>
+                                  <th style={{ padding:"10px 12px", textAlign:"left", fontWeight:700, color:"#475569" }}>Paciente</th>
+                                  <th style={{ padding:"10px 8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Data</th>
+                                  <th style={{ padding:"10px 8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Valor</th>
+                                  <th style={{ padding:"10px 8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Forma</th>
+                                  <th style={{ padding:"10px 8px", textAlign:"left", fontWeight:700, color:"#475569" }}>Obs.</th>
+                                  <th style={{ padding:"10px 8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Registrado por</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {sortedPayments.slice(0, 50).map(pg => (
+                                  <tr key={pg.id} style={{ borderBottom:"1px solid #F1F5F9" }}>
+                                    <td style={{ padding:"10px 12px" }}>
+                                      <div style={{ fontWeight:600 }}>{pg.patientName}</div>
+                                      {pg.patientCodigo && <div style={{ fontSize:10, color:"#94A3B8" }}>{pg.patientCodigo}</div>}
+                                    </td>
+                                    <td style={{ padding:"10px 8px", textAlign:"center", fontSize:12 }}>{formatDate(pg.data)}</td>
+                                    <td style={{ padding:"10px 8px", textAlign:"right", fontWeight:700, color:"#10B981" }}>R$ {pg.valor.toFixed(2).replace(".",",")}</td>
+                                    <td style={{ padding:"10px 8px", textAlign:"center" }}>
+                                      <span style={{ fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:6, color: getPaymentColor(pg.forma_pagamento), background: `${getPaymentColor(pg.forma_pagamento)}15`, border: `1px solid ${getPaymentColor(pg.forma_pagamento)}40` }}>
+                                        {getPaymentIcon(pg.forma_pagamento)} {getPaymentLabel(pg.forma_pagamento)}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding:"10px 8px", fontSize:12, color:"#64748B", maxWidth:150, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{pg.observacao || "-"}</td>
+                                    <td style={{ padding:"10px 8px", textAlign:"center", fontSize:11, color:"#94A3B8" }}>{pg.registrado_por}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Accounts Receivable Tab */}
+                    {finTab === "contas" && (
+                      <div>
+                        {devedores.length === 0 ? (
+                          <div style={{ ...cardStyle, textAlign:"center", padding:60 }}>
+                            <div style={{ fontSize:48, marginBottom:8 }}>✅</div>
+                            <div style={{ fontSize:16, fontWeight:700, color:"#10B981" }}>Todas as contas estão em dia!</div>
+                            <div style={{ fontSize:13, color:"#94A3B8", marginTop:4 }}>Nenhum paciente com saldo devedor.</div>
+                          </div>
+                        ) : (
+                          <div style={{ ...cardStyle, padding:0, overflow:"hidden" }}>
+                            <div style={{ padding:"14px 16px", background:"#FEF2F2", borderBottom:"1px solid #FECACA", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                              <span style={{ fontSize:13, fontWeight:700, color:"#DC2626" }}>⚠️ {devedores.length} paciente(s) com saldo devedor</span>
+                              <span style={{ fontSize:15, fontWeight:800, color:"#EF4444" }}>Total: R$ {devedores.reduce((s, d) => s + d.saldo, 0).toFixed(2).replace(".",",")}</span>
+                            </div>
+                            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                              <thead>
+                                <tr style={{ background:"#F8FAFC", borderBottom:"2px solid #E2E8F0" }}>
+                                  <th style={{ padding:"10px 12px", textAlign:"left", fontWeight:700, color:"#475569" }}>Paciente</th>
+                                  <th style={{ padding:"10px 8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Orçamento</th>
+                                  <th style={{ padding:"10px 8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Pago</th>
+                                  <th style={{ padding:"10px 8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Saldo Devedor</th>
+                                  <th style={{ padding:"10px 8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Ações</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {devedores.map(d => (
+                                  <tr key={d.id} style={{ borderBottom:"1px solid #F1F5F9" }}>
+                                    <td style={{ padding:"10px 12px" }}>
+                                      <div style={{ fontWeight:600 }}>{d.name}</div>
+                                      {d.codigo && <div style={{ fontSize:10, color:"#94A3B8" }}>{d.codigo}</div>}
+                                    </td>
+                                    <td style={{ padding:"10px 8px", textAlign:"right", fontWeight:600, color:"#1E40AF" }}>R$ {d.orcamento.toFixed(2).replace(".",",")}</td>
+                                    <td style={{ padding:"10px 8px", textAlign:"right", fontWeight:600, color:"#10B981" }}>R$ {d.pago.toFixed(2).replace(".",",")}</td>
+                                    <td style={{ padding:"10px 8px", textAlign:"right", fontWeight:800, color:"#EF4444" }}>R$ {d.saldo.toFixed(2).replace(".",",")}</td>
+                                    <td style={{ padding:"10px 8px", textAlign:"center" }}>
+                                      <button onClick={() => { setSelectedPatient(d); setShowFinanceiro(true); }} style={{ ...btnSecondary, fontSize:11, padding:"4px 10px" }}>💰 Registrar Pgto</button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         )}
                       </div>
-                    </div>
+                    )}
                   </div>
                 );
               })()}
@@ -2784,94 +3055,238 @@
           </Modal>
 
           {/* ═══ FINANCEIRO MODAL ═══ */}
-          <Modal isOpen={showFinanceiro} onClose={() => { setShowFinanceiro(false); setEditingOrcamento(false); setTempOrcamento(""); setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" }); }} title="Financeiro - Controle de Pagamentos" wide>
+          <Modal isOpen={showFinanceiro} onClose={() => { setShowFinanceiro(false); setEditingOrcamento(false); setTempOrcamento(""); setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "dinheiro", observacao: "", parcelas: 1 }); }} title={`Financeiro — ${selectedPatient?.name || ""}`} wide>
             {selectedPatient && (
               <div>
-                {/* Orçamento Total */}
+                {/* Budget Section */}
                 <div style={{ ...cardStyle, marginBottom:16, background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderColor:"#3B82F6" }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-                    <div style={{ fontSize:16, fontWeight:700, color:"#1E40AF" }}>💵 Orçamento Total</div>
-                    {!editingOrcamento && (
-                      <button onClick={() => { setTempOrcamento(selectedPatient.financeiro.orcamento_total.toString()); setEditingOrcamento(true); }} style={{...btnSecondary, fontSize:12, padding:"4px 12px"}}>✏️ Editar</button>
-                    )}
-                  </div>
-                  {editingOrcamento ? (
-                    <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-                      <Input label="" value={tempOrcamento} onChange={e => setTempOrcamento(e.target.value)} placeholder="0.00" type="number" step="0.01" />
-                      <button onClick={() => saveOrcamento(selectedPatient.id, tempOrcamento)} style={{...btnPrimary, fontSize:13, padding:"8px 16px", whiteSpace:"nowrap"}}>✓ Salvar</button>
-                      <button onClick={() => { setEditingOrcamento(false); setTempOrcamento(""); }} style={{...btnSecondary, fontSize:13, padding:"8px 16px"}}>×</button>
+                    <div style={{ fontSize:15, fontWeight:700, color:"#1E40AF" }}>💵 Orçamento</div>
+                    <div style={{ display:"flex", gap:6 }}>
+                      {(() => {
+                        const bs = BUDGET_STATUS_MAP[selectedPatient.financeiro.orcamento_status || "pendente"] || BUDGET_STATUS_MAP["pendente"];
+                        return <span style={{ fontSize:10, fontWeight:700, padding:"3px 8px", borderRadius:6, background:bs.bg, color:bs.color, border:`1px solid ${bs.border}` }}>{bs.label}</span>;
+                      })()}
+                      <button onClick={() => openBudgetEditor(selectedPatient)} style={{...btnSecondary, fontSize:11, padding:"4px 10px"}}>✏️ Editar Itens</button>
                     </div>
-                  ) : (
-                    <div style={{ fontSize:28, fontWeight:800, color:"#1E40AF" }}>
-                      R$ {(selectedPatient.financeiro.orcamento_total || 0).toFixed(2).replace(".", ",")}
+                  </div>
+                  <div style={{ fontSize:26, fontWeight:800, color:"#1E40AF", marginBottom:8 }}>
+                    R$ {(selectedPatient.financeiro.orcamento_total || 0).toFixed(2).replace(".", ",")}
+                  </div>
+                  {/* Show items summary */}
+                  {(selectedPatient.financeiro.orcamento_items || []).length > 0 && (
+                    <div style={{ marginTop:8, borderTop:"1px solid #93C5FD", paddingTop:8 }}>
+                      <div style={{ fontSize:12, fontWeight:600, color:"#1E40AF", marginBottom:6 }}>{selectedPatient.financeiro.orcamento_items.length} item(ns):</div>
+                      <div style={{ maxHeight:120, overflowY:"auto" }}>
+                        {selectedPatient.financeiro.orcamento_items.map((it, idx) => (
+                          <div key={it.id || idx} style={{ display:"flex", justifyContent:"space-between", padding:"3px 0", fontSize:12, color:"#1E40AF" }}>
+                            <span>{it.procedimento}{it.dente ? ` (${it.dente})` : ""} x{it.quantidade}</span>
+                            <span style={{ fontWeight:600 }}>R$ {((it.quantidade * it.valor_unitario) - (it.desconto || 0)).toFixed(2).replace(".",",")}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Status actions */}
+                  {selectedPatient.financeiro.orcamento_total > 0 && (
+                    <div style={{ marginTop:10, display:"flex", gap:6, flexWrap:"wrap" }}>
+                      {BUDGET_STATUSES.filter(s => s.value !== selectedPatient.financeiro.orcamento_status).map(s => (
+                        <button key={s.value} onClick={() => updateBudgetStatus(selectedPatient.id, s.value)} style={{ fontSize:10, fontWeight:600, padding:"3px 8px", borderRadius:6, border:`1px solid ${s.border}`, background:s.bg, color:s.color, cursor:"pointer" }}>
+                          {s.label}
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
 
-                {/* Resumo Financeiro */}
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:12, marginBottom:16 }}>
-                  <div style={{ ...cardStyle, background:"#F0FDF4", borderColor:"#10B981" }}>
-                    <div style={{ fontSize:12, fontWeight:600, color:"#059669", marginBottom:4 }}>✓ Total Pago</div>
-                    <div style={{ fontSize:22, fontWeight:800, color:"#10B981" }}>
-                      R$ {selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0).toFixed(2).replace(".", ",")}
+                {/* Financial Summary */}
+                {(() => {
+                  const totalPago = selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0);
+                  const saldo = selectedPatient.financeiro.orcamento_total - totalPago;
+                  return (
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(180px, 1fr))", gap:12, marginBottom:16 }}>
+                      <div style={{ ...cardStyle, background:"#F0FDF4", borderColor:"#10B981" }}>
+                        <div style={{ fontSize:11, fontWeight:600, color:"#059669", marginBottom:4 }}>✓ Total Pago</div>
+                        <div style={{ fontSize:20, fontWeight:800, color:"#10B981" }}>R$ {totalPago.toFixed(2).replace(".", ",")}</div>
+                      </div>
+                      <div style={{ ...cardStyle, background: saldo > 0 ? "#FEF2F2" : "#F0FDF4", borderColor: saldo > 0 ? "#EF4444" : "#10B981" }}>
+                        <div style={{ fontSize:11, fontWeight:600, color: saldo > 0 ? "#DC2626" : "#059669", marginBottom:4 }}>
+                          {saldo > 0 ? "⚠️ Saldo Devedor" : "✓ Quitado"}
+                        </div>
+                        <div style={{ fontSize:20, fontWeight:800, color: saldo > 0 ? "#EF4444" : "#10B981" }}>R$ {Math.abs(saldo).toFixed(2).replace(".", ",")}</div>
+                      </div>
                     </div>
-                  </div>
-                  <div style={{ ...cardStyle, background: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "#FEF2F2" : "#F0FDF4", borderColor: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "#EF4444" : "#10B981" }}>
-                    <div style={{ fontSize:12, fontWeight:600, color: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "#DC2626" : "#059669", marginBottom:4 }}>
-                      {selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "⚠️ Saldo Devedor" : "✓ Quitado"}
-                    </div>
-                    <div style={{ fontSize:22, fontWeight:800, color: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "#EF4444" : "#10B981" }}>
-                      R$ {Math.abs(selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0)).toFixed(2).replace(".", ",")}
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()}
 
-                {/* Novo Pagamento */}
+                {/* New Payment */}
                 <div style={{ ...cardStyle, marginBottom:16 }}>
-                  <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12 }}>💳 Registrar Novo Pagamento</div>
-                  <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:12, marginBottom:12 }}>
+                  <div style={{ fontSize:15, fontWeight:700, color:"#0F172A", marginBottom:12 }}>💳 Registrar Novo Pagamento</div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
                     <Input label="Data *" type="date" value={financeiroForm.data} onChange={e => setFinanceiroForm({...financeiroForm, data: e.target.value})} />
                     <Input label="Valor (R$) *" type="number" step="0.01" value={financeiroForm.valor} onChange={e => setFinanceiroForm({...financeiroForm, valor: e.target.value})} placeholder="0.00" />
-                    <Select label="Forma de Pagamento *" value={financeiroForm.forma_pagamento} onChange={e => setFinanceiroForm({...financeiroForm, forma_pagamento: e.target.value})}
-                      options={[{value:"avista",label:"À Vista"},{value:"parcelado",label:"Parcelado"}]} />
                   </div>
-                  <Input label="Observação" value={financeiroForm.observacao} onChange={e => setFinanceiroForm({...financeiroForm, observacao: e.target.value})} placeholder="Ex: Parcela 1/12, Cartão, etc." />
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+                    <Select label="Forma de Pagamento *" value={financeiroForm.forma_pagamento} onChange={e => setFinanceiroForm({...financeiroForm, forma_pagamento: e.target.value})}
+                      options={PAYMENT_METHODS.map(m => ({value: m.value, label: `${m.icon} ${m.label}`}))} />
+                    {(financeiroForm.forma_pagamento === "cartao_credito" || financeiroForm.forma_pagamento === "boleto") && (
+                      <Input label="Parcelas" type="number" min="1" max="48" value={financeiroForm.parcelas} onChange={e => setFinanceiroForm({...financeiroForm, parcelas: e.target.value})} />
+                    )}
+                  </div>
+                  <Input label="Observação" value={financeiroForm.observacao} onChange={e => setFinanceiroForm({...financeiroForm, observacao: e.target.value})} placeholder="Ex: Parcela 1/12, referente a..." />
                   <div style={{ display:"flex", justifyContent:"flex-end", marginTop:12 }}>
-                    <button onClick={() => addPagamento(selectedPatient.id)} style={btnPrimary}>✓ Adicionar Pagamento</button>
+                    <button onClick={() => addPagamento(selectedPatient.id)} style={{...btnPrimary, opacity: (!financeiroForm.valor || parseFloat(financeiroForm.valor) <= 0) ? 0.5 : 1}}>✓ Adicionar Pagamento</button>
                   </div>
                 </div>
 
-                {/* Histórico de Pagamentos */}
+                {/* Payment History */}
                 <div style={{ ...cardStyle }}>
-                  <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12 }}>📊 Histórico de Pagamentos ({selectedPatient.financeiro.pagamentos.length})</div>
+                  <div style={{ fontSize:15, fontWeight:700, color:"#0F172A", marginBottom:12 }}>📊 Histórico de Pagamentos ({selectedPatient.financeiro.pagamentos.length})</div>
                   {selectedPatient.financeiro.pagamentos.length === 0 ? (
                     <div style={{ textAlign:"center", padding:40, color:"#94A3B8" }}>Nenhum pagamento registrado</div>
                   ) : (
-                    <div style={{ maxHeight:400, overflowY:"auto" }}>
+                    <div style={{ maxHeight:350, overflowY:"auto" }}>
                       {selectedPatient.financeiro.pagamentos.sort((a, b) => new Date(b.data) - new Date(a.data)).map(pg => (
-                        <div key={pg.id} style={{ padding:12, background:"#F8FAFC", borderRadius:8, marginBottom:8, border:"1px solid #E2E8F0" }}>
-                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start", marginBottom:6 }}>
+                        <div key={pg.id} style={{ padding:10, background:"#F8FAFC", borderRadius:8, marginBottom:6, border:"1px solid #E2E8F0" }}>
+                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
                             <div style={{ flex:1 }}>
                               <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-                                <span style={{ fontSize:18, fontWeight:800, color:"#10B981" }}>R$ {pg.valor.toFixed(2).replace(".", ",")}</span>
-                                <span style={{ fontSize:11, fontWeight:700, color:pg.forma_pagamento === "avista" ? "#0EA5E9" : "#F59E0B", background:pg.forma_pagamento === "avista" ? "#EFF6FF" : "#FEF3C7", border:`1px solid ${pg.forma_pagamento === "avista" ? "#BFDBFE" : "#FDE68A"}`, borderRadius:6, padding:"2px 8px" }}>
-                                  {pg.forma_pagamento === "avista" ? "À Vista" : "Parcelado"}
+                                <span style={{ fontSize:16, fontWeight:800, color:"#10B981" }}>R$ {pg.valor.toFixed(2).replace(".", ",")}</span>
+                                <span style={{ fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:6, color: getPaymentColor(pg.forma_pagamento), background: `${getPaymentColor(pg.forma_pagamento)}15`, border: `1px solid ${getPaymentColor(pg.forma_pagamento)}40` }}>
+                                  {getPaymentIcon(pg.forma_pagamento)} {getPaymentLabel(pg.forma_pagamento)}
                                 </span>
+                                {pg.parcelas > 1 && <span style={{ fontSize:10, color:"#64748B" }}>({pg.parcelas}x)</span>}
                               </div>
-                              <div style={{ fontSize:12, color:"#64748B" }}>
-                                📅 {formatDate(pg.data)}
-                                {pg.observacao && ` · ${pg.observacao}`}
+                              <div style={{ fontSize:11, color:"#64748B" }}>
+                                📅 {formatDate(pg.data)}{pg.observacao && ` · ${pg.observacao}`}
                               </div>
-                              <div style={{ fontSize:11, color:"#94A3B8", marginTop:4 }}>
-                                Registrado por: {pg.registrado_por} em {new Date(pg.registrado_em).toLocaleString("pt-BR")}
+                              <div style={{ fontSize:10, color:"#94A3B8", marginTop:2 }}>
+                                por {pg.registrado_por} · {pg.registrado_em ? new Date(pg.registrado_em).toLocaleString("pt-BR") : ""}
                               </div>
                             </div>
-                            <button onClick={() => removePagamento(selectedPatient.id, pg.id)} style={{...btnSecondary, fontSize:11, padding:"4px 8px", background:"#FEE2E2", color:"#DC2626", border:"1px solid #FCA5A5"}}>🗑️</button>
+                            <button onClick={() => removePagamento(selectedPatient.id, pg.id)} style={{...btnSecondary, fontSize:10, padding:"4px 6px", background:"#FEE2E2", color:"#DC2626", border:"1px solid #FCA5A5"}}>🗑️</button>
                           </div>
                         </div>
                       ))}
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+          </Modal>
+
+          {/* ═══ BUDGET EDITOR MODAL ═══ */}
+          <Modal isOpen={showBudgetModal} onClose={() => { setShowBudgetModal(false); setBudgetPatientId(null); setBudgetItems([]); setBudgetObs(""); }} title={`Editar Orçamento — ${patients.find(p => p.id === budgetPatientId)?.name || ""}`} wide>
+            {budgetPatientId && (
+              <div>
+                {/* Add Item Form */}
+                <div style={{ ...cardStyle, marginBottom:16, background:"#F8FAFC" }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:"#0F172A", marginBottom:10 }}>Adicionar Procedimento</div>
+                  <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr", gap:10, marginBottom:10 }}>
+                    <div>
+                      <label style={{ display:"block", fontSize:12, fontWeight:600, color:"#475569", marginBottom:4 }}>Procedimento *</label>
+                      <select value={budgetItemForm.procedimento} onChange={e => setBudgetItemForm({...budgetItemForm, procedimento: e.target.value})} style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:"1.5px solid #E2E8F0", fontSize:13, background:"#fff" }}>
+                        <option value="">Selecione...</option>
+                        {Object.values(SPECIALTIES).map(spec => (
+                          <optgroup key={spec.label} label={`${spec.icon} ${spec.label}`}>
+                            {spec.procedures.map(proc => (
+                              <option key={proc} value={proc}>{proc}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                        <option value="__custom">Outro (personalizado)</option>
+                      </select>
+                      {budgetItemForm.procedimento === "__custom" && (
+                        <input value={budgetItemForm.procedimento_custom || ""} onChange={e => setBudgetItemForm({...budgetItemForm, procedimento_custom: e.target.value})} placeholder="Nome do procedimento..." style={{ width:"100%", marginTop:6, padding:"8px 10px", borderRadius:8, border:"1.5px solid #E2E8F0", fontSize:13 }} />
+                      )}
+                    </div>
+                    <Input label="Dente/Região" value={budgetItemForm.dente} onChange={e => setBudgetItemForm({...budgetItemForm, dente: e.target.value})} placeholder="Ex: 11, 21-23" />
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:10 }}>
+                    <Input label="Quantidade" type="number" min="1" value={budgetItemForm.quantidade} onChange={e => setBudgetItemForm({...budgetItemForm, quantidade: e.target.value})} />
+                    <Input label="Valor Unitário (R$) *" type="number" step="0.01" value={budgetItemForm.valor_unitario} onChange={e => setBudgetItemForm({...budgetItemForm, valor_unitario: e.target.value})} placeholder="0.00" />
+                    <Input label="Desconto (R$)" type="number" step="0.01" value={budgetItemForm.desconto} onChange={e => setBudgetItemForm({...budgetItemForm, desconto: e.target.value})} placeholder="0.00" />
+                  </div>
+                  <Input label="Observação" value={budgetItemForm.observacao} onChange={e => setBudgetItemForm({...budgetItemForm, observacao: e.target.value})} placeholder="Obs. sobre este item" />
+                  <div style={{ display:"flex", justifyContent:"flex-end", marginTop:10 }}>
+                    <button onClick={() => {
+                      const proc = budgetItemForm.procedimento === "__custom" ? (budgetItemForm.procedimento_custom || "Personalizado") : budgetItemForm.procedimento;
+                      if (!proc || !budgetItemForm.valor_unitario) return;
+                      addBudgetItem({ ...budgetItemForm, procedimento: proc });
+                      setBudgetItemForm({ procedimento: "", dente: "", quantidade: 1, valor_unitario: "", desconto: 0, observacao: "" });
+                    }} style={{...btnPrimary, fontSize:13, padding:"8px 16px", opacity: (!budgetItemForm.procedimento || !budgetItemForm.valor_unitario) ? 0.5 : 1}}>+ Adicionar Item</button>
+                  </div>
+                </div>
+
+                {/* Items Table */}
+                <div style={{ ...cardStyle, marginBottom:16, padding: budgetItems.length > 0 ? 0 : 20, overflow:"hidden" }}>
+                  <div style={{ padding: budgetItems.length > 0 ? "12px 16px" : 0, fontSize:14, fontWeight:700, color:"#0F172A" }}>
+                    {budgetItems.length > 0 ? `${budgetItems.length} item(ns) no orçamento` : ""}
+                  </div>
+                  {budgetItems.length === 0 ? (
+                    <div style={{ textAlign:"center", padding:30, color:"#94A3B8" }}>
+                      <div style={{ fontSize:36, marginBottom:4 }}>📋</div>
+                      <div style={{ fontSize:13, fontWeight:600 }}>Nenhum item adicionado</div>
+                      <div style={{ fontSize:12, marginTop:2 }}>Use o formulário acima para adicionar procedimentos.</div>
+                    </div>
+                  ) : (
+                    <div>
+                      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                        <thead>
+                          <tr style={{ background:"#F8FAFC", borderBottom:"2px solid #E2E8F0" }}>
+                            <th style={{ padding:"8px 12px", textAlign:"left", fontWeight:700, color:"#475569" }}>Procedimento</th>
+                            <th style={{ padding:"8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Dente</th>
+                            <th style={{ padding:"8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Qtd</th>
+                            <th style={{ padding:"8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Unit.</th>
+                            <th style={{ padding:"8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Desc.</th>
+                            <th style={{ padding:"8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Total</th>
+                            <th style={{ padding:"8px", textAlign:"center", fontWeight:700, color:"#475569" }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {budgetItems.map(it => {
+                            const itemTotal = (it.quantidade * it.valor_unitario) - (it.desconto || 0);
+                            return (
+                              <tr key={it.id} style={{ borderBottom:"1px solid #F1F5F9" }}>
+                                <td style={{ padding:"8px 12px", fontWeight:600 }}>{it.procedimento}</td>
+                                <td style={{ padding:"8px", textAlign:"center", color:"#64748B" }}>{it.dente || "-"}</td>
+                                <td style={{ padding:"8px", textAlign:"center" }}>{it.quantidade}</td>
+                                <td style={{ padding:"8px", textAlign:"right" }}>R$ {it.valor_unitario.toFixed(2).replace(".",",")}</td>
+                                <td style={{ padding:"8px", textAlign:"right", color:"#EF4444" }}>{it.desconto > 0 ? `-R$ ${it.desconto.toFixed(2).replace(".",",")}` : "-"}</td>
+                                <td style={{ padding:"8px", textAlign:"right", fontWeight:700, color:"#1E40AF" }}>R$ {itemTotal.toFixed(2).replace(".",",")}</td>
+                                <td style={{ padding:"8px", textAlign:"center" }}>
+                                  <button onClick={() => removeBudgetItem(it.id)} style={{ background:"none", border:"none", cursor:"pointer", color:"#EF4444", fontSize:14 }}>×</button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{ borderTop:"2px solid #E2E8F0", background:"#EFF6FF" }}>
+                            <td colSpan="5" style={{ padding:"10px 12px", textAlign:"right", fontWeight:800, color:"#1E40AF", fontSize:14 }}>TOTAL:</td>
+                            <td style={{ padding:"10px 8px", textAlign:"right", fontWeight:800, color:"#1E40AF", fontSize:16 }}>
+                              R$ {budgetItems.reduce((s, it) => s + ((it.quantidade * it.valor_unitario) - (it.desconto || 0)), 0).toFixed(2).replace(".",",")}
+                            </td>
+                            <td></td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Observations */}
+                <div style={{ marginBottom:16 }}>
+                  <label style={{ display:"block", fontSize:12, fontWeight:600, color:"#475569", marginBottom:4 }}>Observações do Orçamento</label>
+                  <textarea value={budgetObs} onChange={e => setBudgetObs(e.target.value)} placeholder="Condições, prazos, observações gerais..." rows={3} style={{ width:"100%", padding:"10px 12px", borderRadius:8, border:"1.5px solid #E2E8F0", fontSize:13, resize:"vertical", fontFamily:"inherit" }}></textarea>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+                  <button onClick={() => { setShowBudgetModal(false); setBudgetPatientId(null); }} style={btnSecondary}>Cancelar</button>
+                  <button onClick={() => saveBudgetFromModal(budgetPatientId)} style={{...btnPrimary, opacity: budgetItems.length === 0 ? 0.5 : 1}}>
+                    💾 Salvar Orçamento
+                  </button>
                 </div>
               </div>
             )}
