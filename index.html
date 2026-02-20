@@ -1208,8 +1208,8 @@
           addAudit("EXCLUIR_PACIENTE","paciente",id,p.name,"");
         } catch (err) {
           console.error('Erro ao excluir paciente:', err);
-          const msg = err?.message || err?.error_description || JSON.stringify(err);
-          alert('Erro ao excluir paciente:\n\n' + msg);
+          const msgDel = err?.message || err?.error_description || JSON.stringify(err);
+          alert('Erro ao excluir paciente:\n\n' + msgDel);
         }
       };
 
@@ -1359,7 +1359,8 @@
           addAudit("ALTERAR_RESPONSAVEL","paciente",selectedPatient.id,selectedPatient.name, changes.map(c => `${c.field==="responsavel_clinico_id"?"Clínico":"Orto"}: ${c.fromName} → ${c.toName}`).join("; "));
         } catch (err) {
           console.error('Erro ao alterar responsável:', err);
-          alert('Erro ao alterar responsável. Tente novamente.');
+          const msgResp = err?.message || err?.error_description || JSON.stringify(err);
+          alert('Erro ao alterar responsável:\n\n' + msgResp);
         }
       };
 
@@ -1418,7 +1419,8 @@
           setTempOrcamento("");
         } catch (err) {
           console.error('Erro ao salvar orçamento:', err);
-          alert('Erro ao salvar orçamento. Tente novamente.');
+          const msgOrc = err?.message || err?.error_description || JSON.stringify(err);
+          alert('Erro ao salvar orçamento:\n\n' + msgOrc);
         }
       };
 
@@ -1430,7 +1432,7 @@
           const data = await createPaymentSupabase(patientId, financeiroForm);
           
           if (!data) {
-            alert('Erro ao adicionar pagamento. Tente novamente.');
+            alert('Erro ao adicionar pagamento: retorno vazio do servidor. Verifique o console (F12).');
             return;
           }
           
@@ -1451,7 +1453,8 @@
           setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
         } catch (err) {
           console.error('Erro ao adicionar pagamento:', err);
-          alert('Erro ao adicionar pagamento. Tente novamente.');
+          const msgPag = err?.message || err?.error_description || JSON.stringify(err);
+          alert('Erro ao adicionar pagamento:\n\n' + msgPag);
         }
       };
 
@@ -1463,7 +1466,7 @@
           const success = await deletePaymentSupabase(pagamentoId);
           
           if (!success) {
-            alert('Erro ao remover pagamento. Tente novamente.');
+            alert('Erro ao remover pagamento: operação falhou. Verifique o console (F12).');
             return;
           }
           
@@ -1472,7 +1475,8 @@
           addAudit("REMOVER_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"","");
         } catch (err) {
           console.error('Erro ao remover pagamento:', err);
-          alert('Erro ao remover pagamento. Tente novamente.');
+          const msgRemPag = err?.message || err?.error_description || JSON.stringify(err);
+          alert('Erro ao remover pagamento:\n\n' + msgRemPag);
         }
       };
 
@@ -1510,7 +1514,14 @@
 
       const saveRecord = async (rec) => {
         try {
-          // Criar atendimento no Supabase
+          if (!selectedPatient || !selectedPatient.id) {
+            alert('Erro: nenhum paciente selecionado.');
+            return;
+          }
+          if (!Array.isArray(selectedPatient.records)) {
+            selectedPatient.records = getLocalData('records', selectedPatient.id) || [];
+          }
+          // Criar atendimento no localStorage
           const newAppointment = await createAppointmentSupabase(selectedPatient.id, rec);
           
           // Atualizar estado local
@@ -1530,7 +1541,8 @@
           addAudit("FINALIZAR_ATENDIMENTO","paciente",selectedPatient.id,selectedPatient.name,"Atendimento finalizado e paciente removido da fila");
         } catch (err) {
           console.error('Erro ao salvar atendimento:', err);
-          alert('Erro ao salvar atendimento. Verifique os dados e tente novamente.');
+          const msg = err?.message || err?.error_description || JSON.stringify(err);
+          alert('Erro ao salvar atendimento:\n\n' + msg + '\n\nAbra o console do navegador (F12) para mais detalhes.');
         }
       };
 
@@ -1550,7 +1562,8 @@
           addAudit("EXCLUIR_ATENDIMENTO","atendimento",recId,selectedPatient.name,"");
         } catch (err) {
           console.error('Erro ao excluir atendimento:', err);
-          alert('Erro ao excluir atendimento. Tente novamente.');
+          const msg = err?.message || err?.error_description || JSON.stringify(err);
+          alert('Erro ao excluir atendimento:\n\n' + msg);
         }
       };
 
