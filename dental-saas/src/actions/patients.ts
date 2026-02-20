@@ -23,7 +23,7 @@ export async function getPatients(search?: string) {
     const sanitized = search.replace(/[%_\\,.()"']/g, "");
     if (sanitized.length > 0) {
       query = query.or(
-        `name.ilike.%${sanitized}%,phone.ilike.%${sanitized}%,cpf.ilike.%${sanitized}%,email.ilike.%${sanitized}%`
+        `name.ilike.%${sanitized}%,phone.ilike.%${sanitized}%,email.ilike.%${sanitized}%`
       );
     }
   }
@@ -47,9 +47,8 @@ export async function createPatient(formData: FormData): Promise<{ error?: strin
     name: name.trim(),
     phone: (formData.get("phone") as string) || "",
     email: (formData.get("email") as string) || "",
-    cpf: (formData.get("cpf") as string) || "",
     birth_date: birthDate || null,
-    notes: (formData.get("notes") as string) || "",
+    address: (formData.get("address") as string) || "",
   });
 
   if (error) {
@@ -76,9 +75,8 @@ export async function updatePatient(formData: FormData): Promise<{ error?: strin
       name: name.trim(),
       phone: (formData.get("phone") as string) || "",
       email: (formData.get("email") as string) || "",
-      cpf: (formData.get("cpf") as string) || "",
       birth_date: (formData.get("birth_date") as string) || null,
-      notes: (formData.get("notes") as string) || "",
+      address: (formData.get("address") as string) || "",
     })
     .eq("id", id);
 
