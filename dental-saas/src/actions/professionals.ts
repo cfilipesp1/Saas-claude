@@ -9,15 +9,15 @@ export async function getProfessionals() {
     .from("professionals")
     .select("*")
     .order("name");
-  if (error) throw new Error(error.message);
+  if (error) return [];
   return data ?? [];
 }
 
-export async function createProfessional(formData: FormData) {
+export async function createProfessional(formData: FormData): Promise<{ error?: string }> {
   const supabase = await createServerSupabase();
   const name = formData.get("name");
   if (!name || typeof name !== "string" || name.trim().length === 0) {
-    throw new Error("Nome é obrigatório");
+    return { error: "Nome é obrigatório" };
   }
   const specialty = formData.get("specialty") as string;
 
@@ -26,16 +26,21 @@ export async function createProfessional(formData: FormData) {
     specialty: specialty || "",
   });
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("createProfessional error:", error);
+    return { error: `Erro ao criar profissional: ${error.message} (code: ${error.code})` };
+  }
+
   revalidatePath("/professionals");
+  return {};
 }
 
-export async function updateProfessional(formData: FormData) {
+export async function updateProfessional(formData: FormData): Promise<{ error?: string }> {
   const supabase = await createServerSupabase();
   const id = formData.get("id") as string;
   const name = formData.get("name");
   if (!id || !name || typeof name !== "string" || name.trim().length === 0) {
-    throw new Error("ID e nome são obrigatórios");
+    return { error: "ID e nome são obrigatórios" };
   }
   const specialty = formData.get("specialty") as string;
   const active = formData.get("active") === "true";
@@ -45,13 +50,24 @@ export async function updateProfessional(formData: FormData) {
     .update({ name: name.trim(), specialty, active })
     .eq("id", id);
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("updateProfessional error:", error);
+    return { error: `Erro ao atualizar profissional: ${error.message} (code: ${error.code})` };
+  }
+
   revalidatePath("/professionals");
+  return {};
 }
 
-export async function deleteProfessional(id: string) {
+export async function deleteProfessional(id: string): Promise<{ error?: string }> {
   const supabase = await createServerSupabase();
   const { error } = await supabase.from("professionals").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+
+  if (error) {
+    console.error("deleteProfessional error:", error);
+    return { error: `Erro ao excluir profissional: ${error.message} (code: ${error.code})` };
+  }
+
   revalidatePath("/professionals");
+  return {};
 }

@@ -11,7 +11,7 @@ export async function getWaitlistEntries() {
     .select("*, patient:patients(*), professional:professionals(*)")
     .order("priority", { ascending: false })
     .order("created_at");
-  if (error) throw new Error(error.message);
+  if (error) return [];
   return data ?? [];
 }
 
@@ -31,14 +31,14 @@ export async function getWaitlistProfessionals() {
   return data ?? [];
 }
 
-export async function createWaitlistEntry(formData: FormData) {
+export async function createWaitlistEntry(formData: FormData): Promise<{ error?: string }> {
   const supabase = await createServerSupabase();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   const patient_id = formData.get("patient_id") as string;
-  if (!patient_id) throw new Error("Paciente é obrigatório");
+  if (!patient_id) return { error: "Paciente é obrigatório" };
 
   const specialty = (formData.get("specialty") as string) || "";
   const preferred_professional_id =
@@ -59,7 +59,10 @@ export async function createWaitlistEntry(formData: FormData) {
     .select()
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("createWaitlistEntry error:", error);
+    return { error: `Erro ao adicionar à fila: ${error.message} (code: ${error.code})` };
+  }
 
   // Create initial event (best-effort: don't fail the whole operation if event logging fails)
   const { error: eventError } = await supabase.from("waitlist_events").insert({
@@ -75,6 +78,7 @@ export async function createWaitlistEntry(formData: FormData) {
   }
 
   revalidatePath("/waitlist");
+  return {};
 }
 
 export async function updateWaitlistStatus(
@@ -82,7 +86,7 @@ export async function updateWaitlistStatus(
   fromStatus: WaitlistStatus,
   toStatus: WaitlistStatus,
   note: string
-) {
+): Promise<{ error?: string }> {
   const supabase = await createServerSupabase();
   const {
     data: { user },
@@ -94,7 +98,10 @@ export async function updateWaitlistStatus(
     .eq("id", entryId)
     .eq("status", fromStatus); // Optimistic lock: only update if status hasn't changed
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("updateWaitlistStatus error:", error);
+    return { error: `Erro ao atualizar status: ${error.message} (code: ${error.code})` };
+  }
 
   // Create status change event (best-effort)
   const { error: eventError } = await supabase.from("waitlist_events").insert({
@@ -110,6 +117,7 @@ export async function updateWaitlistStatus(
   }
 
   revalidatePath("/waitlist");
+  return {};
 }
 
 export async function getWaitlistEvents(entryId: string) {
@@ -119,13 +127,19 @@ export async function getWaitlistEvents(entryId: string) {
     .select("*")
     .eq("waitlist_entry_id", entryId)
     .order("created_at", { ascending: false });
-  if (error) throw new Error(error.message);
+  if (error) return [];
   return data ?? [];
 }
 
-export async function deleteWaitlistEntry(id: string) {
+export async function deleteWaitlistEntry(id: string): Promise<{ error?: string }> {
   const supabase = await createServerSupabase();
   const { error } = await supabase.from("waitlist_entries").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+
+  if (error) {
+    console.error("deleteWaitlistEntry error:", error);
+    return { error: `Erro ao remover da fila: ${error.message} (code: ${error.code})` };
+  }
+
   revalidatePath("/waitlist");
+  return {};
 }

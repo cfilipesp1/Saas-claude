@@ -110,13 +110,13 @@ export default function PatientDetailClient({
   function handleUpdatePatient(formData: FormData) {
     setError(null);
     startTransition(async () => {
-      try {
-        await updatePatient(formData);
-        setEditingData(false);
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao atualizar paciente");
+      const result = await updatePatient(formData);
+      if (result?.error) {
+        setError(result.error);
+        return;
       }
+      setEditingData(false);
+      router.refresh();
     });
   }
 
@@ -124,12 +124,12 @@ export default function PatientDetailClient({
   function handleSaveAnamnesis(formData: FormData) {
     setError(null);
     startTransition(async () => {
-      try {
-        await upsertAnamnesis(patient.id, formData);
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao salvar anamnese");
+      const result = await upsertAnamnesis(patient.id, formData);
+      if (result?.error) {
+        setError(result.error);
+        return;
       }
+      router.refresh();
     });
   }
 

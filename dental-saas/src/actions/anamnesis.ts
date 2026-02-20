@@ -13,7 +13,7 @@ export async function getAnamnesis(patientId: string) {
   return data;
 }
 
-export async function upsertAnamnesis(patientId: string, formData: FormData) {
+export async function upsertAnamnesis(patientId: string, formData: FormData): Promise<{ error?: string }> {
   const supabase = await createServerSupabase();
   const {
     data: { user },
@@ -59,7 +59,11 @@ export async function upsertAnamnesis(patientId: string, formData: FormData) {
     { onConflict: "patient_id" }
   );
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("upsertAnamnesis error:", error);
+    return { error: `Erro ao salvar anamnese: ${error.message} (code: ${error.code})` };
+  }
 
   revalidatePath(`/patients/${patientId}`);
+  return {};
 }

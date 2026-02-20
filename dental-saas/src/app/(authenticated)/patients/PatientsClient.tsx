@@ -32,26 +32,26 @@ export default function PatientsClient({
   function handleCreate(formData: FormData) {
     setError(null);
     startTransition(async () => {
-      try {
-        await createPatient(formData);
-        setShowForm(false);
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao criar paciente");
+      const result = await createPatient(formData);
+      if (result?.error) {
+        setError(result.error);
+        return;
       }
+      setShowForm(false);
+      router.refresh();
     });
   }
 
   function handleUpdate(formData: FormData) {
     setError(null);
     startTransition(async () => {
-      try {
-        await updatePatient(formData);
-        setEditing(null);
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao atualizar paciente");
+      const result = await updatePatient(formData);
+      if (result?.error) {
+        setError(result.error);
+        return;
       }
+      setEditing(null);
+      router.refresh();
     });
   }
 
@@ -59,12 +59,12 @@ export default function PatientsClient({
     if (!confirm("Tem certeza que deseja excluir este paciente?")) return;
     setError(null);
     startTransition(async () => {
-      try {
-        await deletePatient(id);
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao excluir paciente");
+      const result = await deletePatient(id);
+      if (result?.error) {
+        setError(result.error);
+        return;
       }
+      router.refresh();
     });
   }
 

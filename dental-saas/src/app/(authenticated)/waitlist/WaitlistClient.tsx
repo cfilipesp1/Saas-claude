@@ -110,13 +110,13 @@ export default function WaitlistClient({
   function handleCreate(formData: FormData) {
     setError(null);
     startTransition(async () => {
-      try {
-        await createWaitlistEntry(formData);
-        setShowForm(false);
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao adicionar à fila");
+      const result = await createWaitlistEntry(formData);
+      if (result?.error) {
+        setError(result.error);
+        return;
       }
+      setShowForm(false);
+      router.refresh();
     });
   }
 
@@ -124,19 +124,19 @@ export default function WaitlistClient({
     if (!statusModal) return;
     setError(null);
     startTransition(async () => {
-      try {
-        await updateWaitlistStatus(
-          statusModal.id,
-          statusModal.status,
-          newStatus,
-          statusNote
-        );
-        setStatusModal(null);
-        setStatusNote("");
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao alterar status");
+      const result = await updateWaitlistStatus(
+        statusModal.id,
+        statusModal.status,
+        newStatus,
+        statusNote
+      );
+      if (result?.error) {
+        setError(result.error);
+        return;
       }
+      setStatusModal(null);
+      setStatusNote("");
+      router.refresh();
     });
   }
 
@@ -144,24 +144,20 @@ export default function WaitlistClient({
     if (!confirm("Excluir este item da fila?")) return;
     setError(null);
     startTransition(async () => {
-      try {
-        await deleteWaitlistEntry(id);
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao excluir item");
+      const result = await deleteWaitlistEntry(id);
+      if (result?.error) {
+        setError(result.error);
+        return;
       }
+      router.refresh();
     });
   }
 
   function openEvents(entryId: string) {
     startTransition(async () => {
-      try {
-        const evts = await getWaitlistEvents(entryId);
-        setEvents(evts);
-        setEventsModal(entryId);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao carregar histórico");
-      }
+      const evts = await getWaitlistEvents(entryId);
+      setEvents(evts);
+      setEventsModal(entryId);
     });
   }
 

@@ -24,26 +24,26 @@ export default function ProfessionalsClient({
   function handleCreate(formData: FormData) {
     setError(null);
     startTransition(async () => {
-      try {
-        await createProfessional(formData);
-        setShowForm(false);
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao criar profissional");
+      const result = await createProfessional(formData);
+      if (result?.error) {
+        setError(result.error);
+        return;
       }
+      setShowForm(false);
+      router.refresh();
     });
   }
 
   function handleUpdate(formData: FormData) {
     setError(null);
     startTransition(async () => {
-      try {
-        await updateProfessional(formData);
-        setEditing(null);
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao atualizar profissional");
+      const result = await updateProfessional(formData);
+      if (result?.error) {
+        setError(result.error);
+        return;
       }
+      setEditing(null);
+      router.refresh();
     });
   }
 
@@ -51,12 +51,12 @@ export default function ProfessionalsClient({
     if (!confirm("Tem certeza que deseja excluir?")) return;
     setError(null);
     startTransition(async () => {
-      try {
-        await deleteProfessional(id);
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao excluir profissional");
+      const result = await deleteProfessional(id);
+      if (result?.error) {
+        setError(result.error);
+        return;
       }
+      router.refresh();
     });
   }
 

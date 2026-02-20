@@ -29,16 +29,16 @@ export async function getPatients(search?: string) {
   }
 
   const { data, error } = await query;
-  if (error) throw new Error(error.message);
+  if (error) return [];
   return data ?? [];
 }
 
-export async function createPatient(formData: FormData) {
+export async function createPatient(formData: FormData): Promise<{ error?: string }> {
   const supabase = await createServerSupabase();
 
   const name = formData.get("name");
   if (!name || typeof name !== "string" || name.trim().length === 0) {
-    throw new Error("Nome é obrigatório");
+    return { error: "Nome é obrigatório" };
   }
 
   const birthDate = (formData.get("birth_date") as string) || null;
@@ -52,17 +52,22 @@ export async function createPatient(formData: FormData) {
     notes: (formData.get("notes") as string) || "",
   });
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("createPatient error:", error);
+    return { error: `Erro ao criar paciente: ${error.message} (code: ${error.code})` };
+  }
+
   revalidatePath("/patients");
+  return {};
 }
 
-export async function updatePatient(formData: FormData) {
+export async function updatePatient(formData: FormData): Promise<{ error?: string }> {
   const supabase = await createServerSupabase();
   const id = formData.get("id") as string;
 
   const name = formData.get("name");
   if (!id || !name || typeof name !== "string" || name.trim().length === 0) {
-    throw new Error("ID e nome são obrigatórios");
+    return { error: "ID e nome são obrigatórios" };
   }
 
   const { error } = await supabase
@@ -77,13 +82,24 @@ export async function updatePatient(formData: FormData) {
     })
     .eq("id", id);
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("updatePatient error:", error);
+    return { error: `Erro ao atualizar paciente: ${error.message} (code: ${error.code})` };
+  }
+
   revalidatePath("/patients");
+  return {};
 }
 
-export async function deletePatient(id: string) {
+export async function deletePatient(id: string): Promise<{ error?: string }> {
   const supabase = await createServerSupabase();
   const { error } = await supabase.from("patients").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+
+  if (error) {
+    console.error("deletePatient error:", error);
+    return { error: `Erro ao excluir paciente: ${error.message} (code: ${error.code})` };
+  }
+
   revalidatePath("/patients");
+  return {};
 }
