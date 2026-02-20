@@ -1785,7 +1785,7 @@
           {/* ── HEADER ── */}
           <div style={{ background:"linear-gradient(135deg,#0F172A 0%,#1E3A5F 100%)", color:"#fff", padding:"12px 24px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:100, flexWrap:"wrap", gap:8 }}>
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              {(view === "patient" || view === "users" || view === "audit" || view === "queue") && (
+              {(view === "patient" || view === "users" || view === "audit" || view === "queue" || view === "budgets" || view === "financial") && (
                 <button onClick={() => { setView("list"); setSelectedPatient(null); }} style={{ background:"rgba(255,255,255,0.12)", border:"none", borderRadius:8, width:36, height:36, color:"#fff", cursor:"pointer", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center" }}>←</button>
               )}
               <div>
@@ -1822,6 +1822,16 @@
                       </span>
                     )
                   )}
+                </button>
+              )}
+              {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION" || currentUser.role === "MANAGER") && (
+                <button onClick={() => setView("budgets")} style={{ background: view==="budgets"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>
+                  📋 Orçamentos
+                </button>
+              )}
+              {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION" || currentUser.role === "MANAGER") && (
+                <button onClick={() => setView("financial")} style={{ background: view==="financial"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>
+                  💰 Financeiro
                 </button>
               )}
               {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && (
@@ -2239,6 +2249,240 @@
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* ═══ BUDGETS VIEW ═══ */}
+          {view === "budgets" && (
+            <div style={{ padding:"20px 24px", maxWidth:1000, margin:"0 auto" }}>
+              <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A", marginBottom:16 }}>📋 Orçamentos</h2>
+
+              {(() => {
+                const budgetData = patients.map(p => {
+                  const fin = p.financeiro || getLocalData('financeiro', p.id) || { orcamento_total: 0, pagamentos: [] };
+                  const totalPago = (fin.pagamentos || []).reduce((s, pg) => s + pg.valor, 0);
+                  const saldo = fin.orcamento_total - totalPago;
+                  const status = fin.orcamento_total === 0 ? "sem_orcamento" : (saldo <= 0 ? "pago" : (totalPago > 0 ? "parcial" : "aberto"));
+                  return { ...p, orcamento: fin.orcamento_total, totalPago, saldo, status, pagamentos: fin.pagamentos || [] };
+                });
+                const comOrcamento = budgetData.filter(b => b.orcamento > 0);
+                const totalOrcamentos = comOrcamento.reduce((s, b) => s + b.orcamento, 0);
+                const totalPagoGeral = comOrcamento.reduce((s, b) => s + b.totalPago, 0);
+                const totalAberto = comOrcamento.reduce((s, b) => s + Math.max(0, b.saldo), 0);
+
+                return (
+                  <div>
+                    {/* Summary Cards */}
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:12, marginBottom:20 }}>
+                      <div style={{ ...cardStyle, background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderColor:"#3B82F6" }}>
+                        <div style={{ fontSize:12, fontWeight:600, color:"#1E40AF", marginBottom:4 }}>📋 Total de Orçamentos</div>
+                        <div style={{ fontSize:28, fontWeight:800, color:"#1E40AF" }}>{comOrcamento.length}</div>
+                      </div>
+                      <div style={{ ...cardStyle, background:"linear-gradient(135deg,#F0F9FF,#E0F2FE)", borderColor:"#0EA5E9" }}>
+                        <div style={{ fontSize:12, fontWeight:600, color:"#0369A1", marginBottom:4 }}>💵 Valor Total</div>
+                        <div style={{ fontSize:22, fontWeight:800, color:"#0EA5E9" }}>R$ {totalOrcamentos.toFixed(2).replace(".",",")}</div>
+                      </div>
+                      <div style={{ ...cardStyle, background:"#F0FDF4", borderColor:"#10B981" }}>
+                        <div style={{ fontSize:12, fontWeight:600, color:"#059669", marginBottom:4 }}>✓ Recebido</div>
+                        <div style={{ fontSize:22, fontWeight:800, color:"#10B981" }}>R$ {totalPagoGeral.toFixed(2).replace(".",",")}</div>
+                      </div>
+                      <div style={{ ...cardStyle, background:"#FEF2F2", borderColor:"#EF4444" }}>
+                        <div style={{ fontSize:12, fontWeight:600, color:"#DC2626", marginBottom:4 }}>⚠️ Em Aberto</div>
+                        <div style={{ fontSize:22, fontWeight:800, color:"#EF4444" }}>R$ {totalAberto.toFixed(2).replace(".",",")}</div>
+                      </div>
+                    </div>
+
+                    {/* Budget List */}
+                    {comOrcamento.length === 0 ? (
+                      <div style={{ textAlign:"center", padding:60, color:"#94A3B8", background:"#F8FAFC", borderRadius:12, border:"1px solid #E2E8F0" }}>
+                        <div style={{ fontSize:48, marginBottom:8 }}>📋</div>
+                        <div style={{ fontSize:16, fontWeight:600 }}>Nenhum orçamento cadastrado</div>
+                        <div style={{ fontSize:13, marginTop:4 }}>Abra a ficha de um paciente e clique em "Financeiro" para criar um orçamento.</div>
+                      </div>
+                    ) : (
+                      <div style={{ ...cardStyle }}>
+                        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:14 }}>
+                          <thead>
+                            <tr style={{ borderBottom:"2px solid #E2E8F0" }}>
+                              <th style={{ padding:"10px 8px", textAlign:"left", fontWeight:700, color:"#475569" }}>Paciente</th>
+                              <th style={{ padding:"10px 8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Orçamento</th>
+                              <th style={{ padding:"10px 8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Pago</th>
+                              <th style={{ padding:"10px 8px", textAlign:"right", fontWeight:700, color:"#475569" }}>Saldo</th>
+                              <th style={{ padding:"10px 8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Status</th>
+                              <th style={{ padding:"10px 8px", textAlign:"center", fontWeight:700, color:"#475569" }}>Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {comOrcamento.sort((a,b) => b.saldo - a.saldo).map(b => (
+                              <tr key={b.id} style={{ borderBottom:"1px solid #F1F5F9" }}>
+                                <td style={{ padding:"12px 8px" }}>
+                                  <div style={{ fontWeight:600 }}>{b.name}</div>
+                                  {b.codigo && <div style={{ fontSize:11, color:"#94A3B8" }}>{b.codigo}</div>}
+                                </td>
+                                <td style={{ padding:"12px 8px", textAlign:"right", fontWeight:700, color:"#1E40AF" }}>R$ {b.orcamento.toFixed(2).replace(".",",")}</td>
+                                <td style={{ padding:"12px 8px", textAlign:"right", fontWeight:600, color:"#10B981" }}>R$ {b.totalPago.toFixed(2).replace(".",",")}</td>
+                                <td style={{ padding:"12px 8px", textAlign:"right", fontWeight:700, color: b.saldo > 0 ? "#EF4444" : "#10B981" }}>R$ {Math.abs(b.saldo).toFixed(2).replace(".",",")}</td>
+                                <td style={{ padding:"12px 8px", textAlign:"center" }}>
+                                  <span style={{ fontSize:11, fontWeight:700, padding:"3px 10px", borderRadius:8,
+                                    background: b.status==="pago" ? "#D1FAE5" : b.status==="parcial" ? "#FEF3C7" : "#FEE2E2",
+                                    color: b.status==="pago" ? "#059669" : b.status==="parcial" ? "#D97706" : "#DC2626",
+                                    border: `1px solid ${b.status==="pago" ? "#6EE7B7" : b.status==="parcial" ? "#FDE68A" : "#FCA5A5"}`
+                                  }}>
+                                    {b.status==="pago" ? "Quitado" : b.status==="parcial" ? "Parcial" : "Em Aberto"}
+                                  </span>
+                                </td>
+                                <td style={{ padding:"12px 8px", textAlign:"center" }}>
+                                  <button onClick={() => { setSelectedPatient(b); setShowFinanceiro(true); }} style={{ ...btnSecondary, fontSize:11, padding:"4px 12px" }}>Ver Detalhes</button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* ═══ FINANCIAL VIEW ═══ */}
+          {view === "financial" && (
+            <div style={{ padding:"20px 24px", maxWidth:1000, margin:"0 auto" }}>
+              <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A", marginBottom:16 }}>💰 Financeiro</h2>
+
+              {(() => {
+                const allPayments = [];
+                let totalOrcamentos = 0;
+                let totalPagoGeral = 0;
+
+                patients.forEach(p => {
+                  const fin = p.financeiro || getLocalData('financeiro', p.id) || { orcamento_total: 0, pagamentos: [] };
+                  totalOrcamentos += fin.orcamento_total || 0;
+                  (fin.pagamentos || []).forEach(pg => {
+                    totalPagoGeral += pg.valor;
+                    allPayments.push({ ...pg, patientName: p.name, patientId: p.id, patientCodigo: p.codigo });
+                  });
+                });
+
+                const totalAberto = totalOrcamentos - totalPagoGeral;
+                const sortedPayments = allPayments.sort((a, b) => new Date(b.data) - new Date(a.data));
+
+                // Agrupar por forma de pagamento
+                const byForma = {};
+                allPayments.forEach(pg => {
+                  const key = pg.forma_pagamento || "outros";
+                  if (!byForma[key]) byForma[key] = { total: 0, count: 0 };
+                  byForma[key].total += pg.valor;
+                  byForma[key].count++;
+                });
+
+                // Receita por mês (últimos 6 meses)
+                const monthlyData = {};
+                const now = new Date();
+                for (let i = 5; i >= 0; i--) {
+                  const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                  const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+                  monthlyData[key] = 0;
+                }
+                allPayments.forEach(pg => {
+                  const d = new Date(pg.data);
+                  const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+                  if (monthlyData[key] !== undefined) monthlyData[key] += pg.valor;
+                });
+                const maxMonthly = Math.max(...Object.values(monthlyData), 1);
+
+                return (
+                  <div>
+                    {/* Summary Cards */}
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:12, marginBottom:20 }}>
+                      <div style={{ ...cardStyle, background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)", borderColor:"#3B82F6" }}>
+                        <div style={{ fontSize:12, fontWeight:600, color:"#1E40AF", marginBottom:4 }}>💵 Total Orçado</div>
+                        <div style={{ fontSize:22, fontWeight:800, color:"#1E40AF" }}>R$ {totalOrcamentos.toFixed(2).replace(".",",")}</div>
+                      </div>
+                      <div style={{ ...cardStyle, background:"#F0FDF4", borderColor:"#10B981" }}>
+                        <div style={{ fontSize:12, fontWeight:600, color:"#059669", marginBottom:4 }}>✓ Total Recebido</div>
+                        <div style={{ fontSize:22, fontWeight:800, color:"#10B981" }}>R$ {totalPagoGeral.toFixed(2).replace(".",",")}</div>
+                      </div>
+                      <div style={{ ...cardStyle, background: totalAberto > 0 ? "#FEF2F2" : "#F0FDF4", borderColor: totalAberto > 0 ? "#EF4444" : "#10B981" }}>
+                        <div style={{ fontSize:12, fontWeight:600, color: totalAberto > 0 ? "#DC2626" : "#059669", marginBottom:4 }}>{totalAberto > 0 ? "⚠️ A Receber" : "✓ Tudo Recebido"}</div>
+                        <div style={{ fontSize:22, fontWeight:800, color: totalAberto > 0 ? "#EF4444" : "#10B981" }}>R$ {Math.abs(totalAberto).toFixed(2).replace(".",",")}</div>
+                      </div>
+                      <div style={{ ...cardStyle, background:"linear-gradient(135deg,#F5F3FF,#EDE9FE)", borderColor:"#8B5CF6" }}>
+                        <div style={{ fontSize:12, fontWeight:600, color:"#6D28D9", marginBottom:4 }}>📊 Total Pagamentos</div>
+                        <div style={{ fontSize:28, fontWeight:800, color:"#8B5CF6" }}>{allPayments.length}</div>
+                      </div>
+                    </div>
+
+                    {/* Receita Mensal (bar chart simples) */}
+                    <div style={{ ...cardStyle, marginBottom:20 }}>
+                      <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:16 }}>📈 Receita Mensal (últimos 6 meses)</div>
+                      <div style={{ display:"flex", alignItems:"flex-end", gap:8, height:120 }}>
+                        {Object.entries(monthlyData).map(([month, value]) => (
+                          <div key={month} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+                            <div style={{ fontSize:11, fontWeight:700, color:"#10B981" }}>{value > 0 ? `R$${(value/1000).toFixed(1)}k` : ""}</div>
+                            <div style={{ width:"100%", background:"linear-gradient(180deg,#10B981,#059669)", borderRadius:"6px 6px 0 0", height: `${Math.max((value/maxMonthly)*90, value > 0 ? 8 : 2)}px`, transition:"height 0.3s" }}></div>
+                            <div style={{ fontSize:10, color:"#94A3B8", fontWeight:600 }}>{month.split("-")[1]}/{month.split("-")[0].slice(2)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 2fr", gap:16 }}>
+                      {/* Por Forma de Pagamento */}
+                      <div style={{ ...cardStyle }}>
+                        <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12 }}>💳 Por Forma de Pagamento</div>
+                        {Object.keys(byForma).length === 0 ? (
+                          <div style={{ textAlign:"center", padding:20, color:"#94A3B8", fontSize:13 }}>Sem dados</div>
+                        ) : (
+                          Object.entries(byForma).map(([forma, data]) => (
+                            <div key={forma} style={{ padding:10, background:"#F8FAFC", borderRadius:8, marginBottom:8, border:"1px solid #E2E8F0" }}>
+                              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+                                <span style={{ fontSize:13, fontWeight:600 }}>{forma === "avista" ? "À Vista" : forma === "parcelado" ? "Parcelado" : forma}</span>
+                                <span style={{ fontSize:13, fontWeight:700, color:"#10B981" }}>R$ {data.total.toFixed(2).replace(".",",")}</span>
+                              </div>
+                              <div style={{ fontSize:11, color:"#94A3B8" }}>{data.count} pagamento(s)</div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {/* Últimos Pagamentos */}
+                      <div style={{ ...cardStyle }}>
+                        <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12 }}>🕐 Últimos Pagamentos</div>
+                        {sortedPayments.length === 0 ? (
+                          <div style={{ textAlign:"center", padding:40, color:"#94A3B8" }}>
+                            <div style={{ fontSize:48, marginBottom:8 }}>💰</div>
+                            <div style={{ fontSize:14, fontWeight:600 }}>Nenhum pagamento registrado</div>
+                          </div>
+                        ) : (
+                          <div style={{ maxHeight:400, overflowY:"auto" }}>
+                            {sortedPayments.slice(0, 20).map(pg => (
+                              <div key={pg.id} style={{ padding:10, background:"#F8FAFC", borderRadius:8, marginBottom:8, border:"1px solid #E2E8F0" }}>
+                                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
+                                  <div>
+                                    <div style={{ fontSize:13, fontWeight:700 }}>{pg.patientName}</div>
+                                    <div style={{ fontSize:11, color:"#64748B" }}>
+                                      📅 {formatDate(pg.data)}
+                                      {pg.observacao && ` · ${pg.observacao}`}
+                                    </div>
+                                  </div>
+                                  <div style={{ textAlign:"right" }}>
+                                    <div style={{ fontSize:15, fontWeight:800, color:"#10B981" }}>R$ {pg.valor.toFixed(2).replace(".",",")}</div>
+                                    <span style={{ fontSize:10, fontWeight:700, color:pg.forma_pagamento === "avista" ? "#0EA5E9" : "#F59E0B", background:pg.forma_pagamento === "avista" ? "#EFF6FF" : "#FEF3C7", border:`1px solid ${pg.forma_pagamento === "avista" ? "#BFDBFE" : "#FDE68A"}`, borderRadius:6, padding:"1px 6px" }}>
+                                      {pg.forma_pagamento === "avista" ? "À Vista" : "Parcelado"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
