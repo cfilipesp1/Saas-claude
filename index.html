@@ -1249,87 +1249,13 @@
       const openPatient = async (p) => {
         try {
           const fresh = patients.find(x => x.id === p.id) || p;
-          
-          // Verificar se há records antigos para migrar
-          const oldRecords = getLocalData('records', fresh.id) || [];
-          if (oldRecords.length > 0) {
-            const shouldMigrate = confirm(
-              `Encontramos ${oldRecords.length} atendimento(s) antigo(s) deste paciente.\n\n` +
-              `Deseja migrá-los para o novo sistema Supabase?\n\n` +
-              `(Recomendado: clique em OK para migrar)`
-            );
-            
-            if (shouldMigrate) {
-              const result = await migrateRecordsToSupabase(fresh.id);
-              if (result.migrated > 0) {
-                alert(
-                  `Migração de atendimentos concluída!\n\n` +
-                  `✅ ${result.migrated} atendimento(s) migrado(s) com sucesso\n` +
-                  (result.errors > 0 ? `⚠️ ${result.errors} erro(s)` : '')
-                );
-              }
-            }
-          }
-          
-          // Carregar atendimentos do Supabase
+
+          // Carregar atendimentos
           const appointments = await loadAppointmentsSupabase(fresh.id);
-          
-          // Carregar dados financeiros do Supabase
+
+          // Carregar dados financeiros
           const budget = await loadBudgetSupabase(fresh.id);
           const payments = await loadPaymentsSupabase(fresh.id);
-          
-          // Verificar se há dados financeiros antigos para migrar
-          const oldFinanceiro = getLocalData('financeiro', fresh.id);
-          if (oldFinanceiro && (oldFinanceiro.orcamento_total > 0 || oldFinanceiro.pagamentos?.length > 0)) {
-            const shouldMigrate = confirm(
-              `Encontramos dados financeiros antigos deste paciente.\n\n` +
-              `Orçamento: R$ ${oldFinanceiro.orcamento_total.toFixed(2)}\n` +
-              `Pagamentos: ${oldFinanceiro.pagamentos?.length || 0}\n\n` +
-              `Deseja migrá-los para o novo sistema Supabase?\n\n` +
-              `(Recomendado: clique em OK para migrar)`
-            );
-            
-            if (shouldMigrate) {
-              let migrated = 0;
-              let errors = 0;
-              
-              // Migrar orçamento
-              if (oldFinanceiro.orcamento_total > 0) {
-                const budgetResult = await createOrUpdateBudgetSupabase(fresh.id, oldFinanceiro.orcamento_total);
-                if (budgetResult) migrated++;
-                else errors++;
-              }
-              
-              // Migrar pagamentos
-              for (const pagamento of (oldFinanceiro.pagamentos || [])) {
-                const paymentResult = await createPaymentSupabase(fresh.id, {
-                  data: pagamento.data,
-                  valor: pagamento.valor,
-                  forma_pagamento: pagamento.forma_pagamento,
-                  observacao: pagamento.observacao
-                });
-                if (paymentResult) migrated++;
-                else errors++;
-              }
-              
-              if (migrated > 0) {
-                alert(
-                  `Migração financeira concluída!\n\n` +
-                  `✅ ${migrated} item(ns) migrado(s) com sucesso\n` +
-                  (errors > 0 ? `⚠️ ${errors} erro(s)` : '')
-                );
-                
-                // Recarregar dados após migração
-                const newBudget = await loadBudgetSupabase(fresh.id);
-                const newPayments = await loadPaymentsSupabase(fresh.id);
-                budget.total_amount = newBudget?.total_amount || 0;
-                payments.splice(0, payments.length, ...newPayments);
-                
-                // Limpar dados antigos
-                localStorage.removeItem(`patient_financeiro_${fresh.id}`);
-              }
-            }
-          }
           
           const patientWithRecords = {
             ...fresh,
