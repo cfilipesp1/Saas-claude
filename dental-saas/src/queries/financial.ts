@@ -71,17 +71,6 @@ export async function getOrthoContracts() {
   return data ?? [];
 }
 
-export async function getOrthoReceivables(contractId: string) {
-  const supabase = await createServerSupabase();
-  const { data } = await supabase
-    .from("receivables")
-    .select("*, patient:patients(id, name)")
-    .eq("origin_type", "ortho_contract")
-    .eq("origin_id", contractId)
-    .order("due_date");
-  return data ?? [];
-}
-
 // ─── Dashboard ───────────────────────────────────────────────
 
 export async function getFinancialSummary(startDate: string, endDate: string) {
