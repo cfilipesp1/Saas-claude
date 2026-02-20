@@ -23,6 +23,22 @@
     .tipo-card { padding: 16px 24px; border-radius: 12px; border: 2px solid #E2E8F0; cursor: pointer; text-align: center; transition: all 0.2s; flex: 1; }
     .tipo-card:hover { border-color: #94A3B8; }
     .tipo-card.selected { border-color: currentColor; }
+    
+    /* Animações Realtime */
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes slideInRight {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
   </style>
 </head>
 <body>
@@ -425,6 +441,11 @@
       const [auditLogs, setAuditLogs] = useState(() => {
         try { return JSON.parse(localStorage.getItem("dental_audit")) || []; } catch { return []; }
       });
+      
+      // ── Realtime State ──
+      const [syncing, setSyncing] = useState(false);
+      const [notifications, setNotifications] = useState([]);
+      const [realtimeChannels, setRealtimeChannels] = useState([]);
 
       // ── Navigation ──
       const [view, setView] = useState("list");
@@ -630,6 +651,20 @@
         };
         
         loadPatients();
+      }, [currentUser]);
+      
+      // ── Setup Realtime Listeners ──
+      useEffect(() => {
+        if (currentUser && currentUser.clinic_id) {
+          setupRealtimeListeners();
+        }
+        
+        // Cleanup ao desmontar ou trocar usuário
+        return () => {
+          realtimeChannels.forEach(channel => {
+            supabase.removeChannel(channel);
+          });
+        };
       }, [currentUser]);
 
       // ── Persist (with error handling to prevent UI freeze) ──
@@ -862,6 +897,183 @@
           console.error('Erro ao deletar pagamento:', err);
           return false;
         }
+      };
+      
+      // ── Realtime & Notificações ──
+      const showNotification = (message, type = 'info') => {
+        const id = Date.now();
+        setNotifications(prev => [...prev, { id, message, type }]);
+        
+        // Auto-remover após 5 segundos
+        setTimeout(() => {
+          setNotifications(prev => prev.filter(n => n.id !== id));
+        }, 5000);
+      };
+      
+      const setupRealtimeListeners = () => {
+        if (!currentUser || !currentUser.clinic_id) return;
+        
+        // Limpar listeners antigos
+        realtimeChannels.forEach(channel => {
+          supabase.removeChannel(channel);
+        });
+        
+        const channels = [];
+        
+        // Listener para patients
+        const patientsChannel = supabase
+          .channel('patients-changes')
+          .on('postgres_changes', 
+            { 
+              event: '*', 
+              schema: 'public', 
+              table: 'patients',
+              filter: `clinic_id=eq.${currentUser.clinic_id}`
+            }, 
+            (payload) => {
+              const { eventType, new: newRecord, old: oldRecord } = payload;
+              
+              switch (eventType) {
+                case 'INSERT':
+                  setPatients(prev => {
+                    // Evitar duplicatas
+                    if (prev.find(p => p.id === newRecord.id)) return prev;
+                    return [...prev, newRecord];
+                  });
+                  showNotification(`Novo paciente: ${newRecord.name}`, 'success');
+                  break;
+                  
+                case 'UPDATE':
+                  setPatients(prev => prev.map(p => 
+                    p.id === newRecord.id ? { ...p, ...newRecord } : p
+                  ));
+                  // Atualizar selectedPatient se estiver aberto
+                  if (selectedPatient?.id === newRecord.id) {
+                    setSelectedPatient(prev => ({ ...prev, ...newRecord }));
+                  }
+                  showNotification(`Paciente atualizado: ${newRecord.name}`, 'info');
+                  break;
+                  
+                case 'DELETE':
+                  setPatients(prev => prev.filter(p => p.id !== oldRecord.id));
+                  // Fechar prontuário se estiver aberto
+                  if (selectedPatient?.id === oldRecord.id) {
+                    setSelectedPatient(null);
+                    setView('list');
+                  }
+                  showNotification(`Paciente removido: ${oldRecord.name}`, 'warning');
+                  break;
+              }
+            }
+          )
+          .subscribe();
+        
+        channels.push(patientsChannel);
+        
+        // Listener para appointments
+        const appointmentsChannel = supabase
+          .channel('appointments-changes')
+          .on('postgres_changes', 
+            { 
+              event: '*', 
+              schema: 'public', 
+              table: 'appointments',
+              filter: `clinic_id=eq.${currentUser.clinic_id}`
+            }, 
+            async (payload) => {
+              const { eventType, new: newRecord, old: oldRecord } = payload;
+              
+              // Se o paciente estiver aberto, recarregar atendimentos
+              if (selectedPatient) {
+                const patientId = newRecord?.patient_id || oldRecord?.patient_id;
+                if (patientId === selectedPatient.id) {
+                  const appointments = await loadAppointmentsSupabase(patientId);
+                  setSelectedPatient(prev => ({ ...prev, records: appointments }));
+                  
+                  if (eventType === 'INSERT') {
+                    showNotification('Novo atendimento adicionado', 'success');
+                  } else if (eventType === 'DELETE') {
+                    showNotification('Atendimento removido', 'warning');
+                  }
+                }
+              }
+            }
+          )
+          .subscribe();
+        
+        channels.push(appointmentsChannel);
+        
+        // Listener para patient_budgets
+        const budgetsChannel = supabase
+          .channel('budgets-changes')
+          .on('postgres_changes', 
+            { 
+              event: '*', 
+              schema: 'public', 
+              table: 'patient_budgets',
+              filter: `clinic_id=eq.${currentUser.clinic_id}`
+            }, 
+            async (payload) => {
+              const { eventType, new: newRecord } = payload;
+              
+              // Se o paciente estiver aberto, recarregar orçamento
+              if (selectedPatient && newRecord?.patient_id === selectedPatient.id) {
+                const budget = await loadBudgetSupabase(newRecord.patient_id);
+                setSelectedPatient(prev => ({
+                  ...prev,
+                  financeiro: {
+                    ...prev.financeiro,
+                    orcamento_total: budget?.total_amount || 0
+                  }
+                }));
+                showNotification('Orçamento atualizado', 'info');
+              }
+            }
+          )
+          .subscribe();
+        
+        channels.push(budgetsChannel);
+        
+        // Listener para payments
+        const paymentsChannel = supabase
+          .channel('payments-changes')
+          .on('postgres_changes', 
+            { 
+              event: '*', 
+              schema: 'public', 
+              table: 'payments',
+              filter: `clinic_id=eq.${currentUser.clinic_id}`
+            }, 
+            async (payload) => {
+              const { eventType, new: newRecord, old: oldRecord } = payload;
+              
+              // Se o paciente estiver aberto, recarregar pagamentos
+              if (selectedPatient) {
+                const patientId = newRecord?.patient_id || oldRecord?.patient_id;
+                if (patientId === selectedPatient.id) {
+                  const payments = await loadPaymentsSupabase(patientId);
+                  setSelectedPatient(prev => ({
+                    ...prev,
+                    financeiro: {
+                      ...prev.financeiro,
+                      pagamentos: payments
+                    }
+                  }));
+                  
+                  if (eventType === 'INSERT') {
+                    showNotification('Novo pagamento registrado', 'success');
+                  } else if (eventType === 'DELETE') {
+                    showNotification('Pagamento removido', 'warning');
+                  }
+                }
+              }
+            }
+          )
+          .subscribe();
+        
+        channels.push(paymentsChannel);
+        
+        setRealtimeChannels(channels);
       };
       
       // Upload de assinatura para Storage
@@ -1802,6 +2014,18 @@
                 <div style={{ fontSize:18, fontWeight:800, letterSpacing:-0.5, cursor:"pointer" }} onClick={() => { setView("list"); setSelectedPatient(null); }}>🦷 O+ Fichas</div>
                 <div style={{ fontSize:10, opacity:0.5, fontWeight:500 }}>Prontuário Eletrônico</div>
               </div>
+              {/* Indicador de Sincronização */}
+              {syncing && (
+                <div style={{ display:"flex", alignItems:"center", gap:6, background:"rgba(255,255,255,0.12)", padding:"6px 12px", borderRadius:8, fontSize:12 }}>
+                  <div style={{ width:12, height:12, border:"2px solid #fff", borderTopColor:"transparent", borderRadius:"50%", animation:"spin 0.8s linear infinite" }}></div>
+                  Sincronizando...
+                </div>
+              )}
+              {!syncing && realtimeChannels.length > 0 && (
+                <div style={{ display:"flex", alignItems:"center", gap:6, background:"rgba(34,197,94,0.15)", padding:"6px 12px", borderRadius:8, fontSize:12, color:"#22C55E" }}>
+                  ✓ Sincronizado
+                </div>
+              )}
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
               {(currentUser.role === "dentista" || currentUser.role === "orto" || currentUser.role === "admin") && (
@@ -2768,11 +2992,33 @@
               )}
             </div>
           </Modal>
+          
+          {/* Sistema de Notificações */}
+          <div style={{ position:"fixed", top:80, right:20, zIndex:9999, display:"flex", flexDirection:"column", gap:10, maxWidth:350 }}>
+            {notifications.map(notif => (
+              <div key={notif.id} style={{
+                background: notif.type === 'success' ? '#ECFDF5' : notif.type === 'warning' ? '#FEF3C7' : '#EFF6FF',
+                border: `1px solid ${notif.type === 'success' ? '#A7F3D0' : notif.type === 'warning' ? '#FDE68A' : '#BFDBFE'}`,
+                borderRadius:10,
+                padding:"12px 16px",
+                fontSize:13,
+                color: notif.type === 'success' ? '#065F46' : notif.type === 'warning' ? '#92400E' : '#1E40AF',
+                fontWeight:600,
+                boxShadow:"0 4px 12px rgba(0,0,0,0.1)",
+                animation:"slideInRight 0.3s ease-out",
+                display:"flex",
+                alignItems:"center",
+                gap:8
+              }}>
+                <span>{notif.type === 'success' ? '✓' : notif.type === 'warning' ? '⚠️' : '🔔'}</span>
+                {notif.message}
+              </div>
+            ))}
+          </div>
         </div>
       );
     }
-
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);;
   </script>
 </body>
 </html>
