@@ -540,15 +540,11 @@
                 .from('patients')
                 .insert({
                   clinic_id: currentUser.clinic_id,
-                  codigo: oldPatient.codigo || null,
                   name: oldPatient.name,
                   birth_date: oldPatient.birthDate || null,
                   phone: oldPatient.phone || null,
                   email: oldPatient.email || null,
-                  cpf: oldPatient.cpf || null,
-                  address: oldPatient.address || null,
-                  responsavel_clinico_id: oldPatient.responsavel_clinico_id || null,
-                  responsavel_orto_id: oldPatient.responsavel_orto_id || null
+                  cpf: oldPatient.cpf || null
                 })
                 .select()
                 .single();
@@ -1409,15 +1405,11 @@
             .from('patients')
             .insert({
               clinic_id: currentUser.clinic_id,
-              codigo: npForm.codigo || null,
               name: npForm.name,
               birth_date: npForm.birthDate || null,
               phone: npForm.phone || null,
               email: npForm.email || null,
-              cpf: npForm.cpf || null,
-              address: npForm.address || null,
-              responsavel_clinico_id: npForm.responsavel_clinico_id || null,
-              responsavel_orto_id: npForm.responsavel_orto_id || null
+              cpf: npForm.cpf || null
             })
             .select()
             .single();
@@ -1616,13 +1608,9 @@
         
         try {
           // Atualizar no Supabase
-          const { error } = await supabase
-            .from('patients')
-            .update({
-              responsavel_clinico_id: respForm.responsavel_clinico_id || null,
-              responsavel_orto_id: respForm.responsavel_orto_id || null
-            })
-            .eq('id', selectedPatient.id);
+          // NOTA: Campos responsavel_clinico_id e responsavel_orto_id não existem na tabela patients
+          // Essa funcionalidade precisa ser reimplementada usando outra tabela ou abordagem
+          const { error } = null; // Desabilitado temporariamente
           
           if (error) throw error;
           
