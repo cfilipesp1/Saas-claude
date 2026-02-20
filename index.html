@@ -138,6 +138,30 @@
     const WIRE_FORMATS = ["Redondo", "Quadrado"];
     const WIRE_GAUGES = ["012","014","016","018","020","16x16","16x22","17x25","19x25","21x25"];
 
+    // ─── STATUS ORTODONTIA ───
+    const ORTHO_STATUSES = [
+      "Tratamento",
+      "Controle de contenção",
+      "Abandono",
+      "Cancelado",
+      "À protestar",
+      "Protesto",
+      "Afastamento temporário",
+      "Transferência",
+      "Controle de erupção",
+    ];
+    const ORTHO_STATUS_COLORS = {
+      "Tratamento": { color: "#10B981", bg: "#F0FDF4" },
+      "Controle de contenção": { color: "#0EA5E9", bg: "#EFF6FF" },
+      "Abandono": { color: "#EF4444", bg: "#FEF2F2" },
+      "Cancelado": { color: "#6B7280", bg: "#F3F4F6" },
+      "À protestar": { color: "#F59E0B", bg: "#FFFBEB" },
+      "Protesto": { color: "#DC2626", bg: "#FEF2F2" },
+      "Afastamento temporário": { color: "#8B5CF6", bg: "#F5F3FF" },
+      "Transferência": { color: "#06B6D4", bg: "#ECFEFF" },
+      "Controle de erupção": { color: "#14B8A6", bg: "#F0FDFA" },
+    };
+
     // ─── TABELA MESTRE DE PROCEDIMENTOS (importada de procedimentos 2.xlsx) ───
     const BUDGET_STATUSES = {
       rascunho: { label: "Rascunho", color: "#94A3B8", bg: "#F1F5F9" },
@@ -1210,6 +1234,10 @@
       const [relatorioFilters, setRelatorioFilters] = useState({ profissional_id: "", data_inicio: formatDateISO(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), data_fim: formatDateISO(new Date()), busca: "" });
       const [relatorioSort, setRelatorioSort] = useState({ field: "date", direction: "desc" });
 
+      // ── Relatório Ortodontia ──
+      const [showRelatorioOrtho, setShowRelatorioOrtho] = useState(false);
+      const [orthoReportFilters, setOrthoReportFilters] = useState({ status: [], busca: "", profissional_id: "" });
+
       // ── Refs ──
       const photoInputRef = useRef(null);
       const docInputRef = useRef(null);
@@ -1344,6 +1372,7 @@
             
             // Converter para formato local (híbrido)
             const patientsData = data.map(p => {
+              const orthoData = getLocalData('orthoData', p.id) || {};
               return {
                 ...p,
                 birthDate: p.birth_date,
@@ -1354,6 +1383,11 @@
                 responsavelHistory: getLocalData('responsavelHistory', p.id) || [],
                 arrivalControl: getLocalData('arrivalControl', p.id) || null,
                 financeiro: getLocalData('financeiro', p.id) || { orcamento_total: 0, pagamentos: [] },
+                is_orthodontic_patient: orthoData.is_orthodontic_patient || false,
+                ortho_status: orthoData.ortho_status || null,
+                ortho_status_updated_at: orthoData.ortho_status_updated_at || null,
+                ortho_status_updated_by: orthoData.ortho_status_updated_by || null,
+                ortho_status_history: orthoData.ortho_status_history || [],
                 createdAt: p.created_at
               };
             });
@@ -1643,6 +1677,102 @@
         } catch (e) { console.error('Erro sync orçamento:', e); }
         setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, orcamento_total: approvedTotal}} : p));
         setSelectedPatient(prev => prev && prev.id === patientId ? {...prev, financeiro: {...prev.financeiro, orcamento_total: approvedTotal}} : prev);
+
+        // Classificação ortodôntica automática
+        syncOrthoClassification(patientId, budgets);
+      };
+
+      // ── Classificação Ortodôntica Automática ──
+      const syncOrthoClassification = (patientId, budgets) => {
+        const hasApprovedOrtho = budgets
+          .filter(b => b.status === "aprovado")
+          .some(b => (b.items || []).some(item => item.specialty && item.specialty.toLowerCase().includes("ortod")));
+
+        if (hasApprovedOrtho) {
+          const orthoData = getLocalData('orthoData', patientId) || {};
+          if (!orthoData.is_orthodontic_patient) {
+            // Primeira classificação → setar "Tratamento" como default
+            const now = new Date().toISOString();
+            const historyEntry = {
+              id: generateId(),
+              old_status: null,
+              new_status: "Tratamento",
+              changed_by: currentUser?.name || "Sistema",
+              changed_at: now,
+              reason: "Classificação automática: orçamento aprovado com especialidade Ortodontia"
+            };
+            const newOrthoData = {
+              is_orthodontic_patient: true,
+              ortho_status: "Tratamento",
+              ortho_status_updated_at: now,
+              ortho_status_updated_by: currentUser?.name || "Sistema",
+              ortho_status_history: [...(orthoData.ortho_status_history || []), historyEntry]
+            };
+            saveLocalData('orthoData', patientId, newOrthoData);
+            const updateFields = { is_orthodontic_patient: true, ortho_status: "Tratamento", ortho_status_updated_at: now, ortho_status_updated_by: currentUser?.name || "Sistema", ortho_status_history: newOrthoData.ortho_status_history };
+            setPatients(prev => prev.map(p => p.id === patientId ? {...p, ...updateFields} : p));
+            setSelectedPatient(prev => prev && prev.id === patientId ? {...prev, ...updateFields} : prev);
+            addAudit("CLASSIFICAR_ORTODONTIA", "paciente", patientId, patients.find(p => p.id === patientId)?.name || "", "Classificado automaticamente como Paciente de Ortodontia → Status: Tratamento");
+          }
+        }
+        // Regra segura: NÃO reverter automaticamente. Só via ação manual.
+      };
+
+      const updateOrthoStatus = (patientId, newStatus, reason) => {
+        const patient = patients.find(p => p.id === patientId);
+        if (!patient) return;
+        const oldStatus = patient.ortho_status;
+        if (oldStatus === newStatus) return;
+
+        const now = new Date().toISOString();
+        const historyEntry = {
+          id: generateId(),
+          old_status: oldStatus,
+          new_status: newStatus,
+          changed_by: currentUser?.name || "—",
+          changed_at: now,
+          reason: reason || ""
+        };
+        const orthoData = getLocalData('orthoData', patientId) || {};
+        const newOrthoData = {
+          ...orthoData,
+          ortho_status: newStatus,
+          ortho_status_updated_at: now,
+          ortho_status_updated_by: currentUser?.name || "—",
+          ortho_status_history: [...(orthoData.ortho_status_history || []), historyEntry]
+        };
+        saveLocalData('orthoData', patientId, newOrthoData);
+        const updateFields = { ortho_status: newStatus, ortho_status_updated_at: now, ortho_status_updated_by: currentUser?.name || "—", ortho_status_history: newOrthoData.ortho_status_history };
+        setPatients(prev => prev.map(p => p.id === patientId ? {...p, ...updateFields} : p));
+        setSelectedPatient(prev => prev && prev.id === patientId ? {...prev, ...updateFields} : prev);
+        addAudit("ALTERAR_STATUS_ORTODONTIA", "paciente", patientId, patient.name, `Status: ${oldStatus || "—"} → ${newStatus}`);
+      };
+
+      const removeOrthoClassification = (patientId) => {
+        const patient = patients.find(p => p.id === patientId);
+        if (!patient) return;
+        const now = new Date().toISOString();
+        const orthoData = getLocalData('orthoData', patientId) || {};
+        const historyEntry = {
+          id: generateId(),
+          old_status: patient.ortho_status,
+          new_status: null,
+          changed_by: currentUser?.name || "—",
+          changed_at: now,
+          reason: "Classificação de ortodontia removida manualmente"
+        };
+        const newOrthoData = {
+          is_orthodontic_patient: false,
+          ortho_status: null,
+          ortho_status_updated_at: now,
+          ortho_status_updated_by: currentUser?.name || "—",
+          ortho_status_history: [...(orthoData.ortho_status_history || []), historyEntry]
+        };
+        saveLocalData('orthoData', patientId, newOrthoData);
+        const updateFields = { is_orthodontic_patient: false, ortho_status: null, ortho_status_updated_at: now, ortho_status_updated_by: currentUser?.name || "—", ortho_status_history: newOrthoData.ortho_status_history };
+        setPatients(prev => prev.map(p => p.id === patientId ? {...p, ...updateFields} : p));
+        setSelectedPatient(prev => prev && prev.id === patientId ? {...prev, ...updateFields} : prev);
+        addAudit("REMOVER_ORTODONTIA", "paciente", patientId, patient.name, `Classificação de ortodontia removida. Status anterior: ${patient.ortho_status || "—"}`);
       };
 
       const deleteBudget = (patientId, budgetId) => {
@@ -2090,6 +2220,11 @@
             responsavelHistory: [],
             arrivalControl: null,
             financeiro: { orcamento_total: 0, pagamentos: [] },
+            is_orthodontic_patient: false,
+            ortho_status: null,
+            ortho_status_updated_at: null,
+            ortho_status_updated_by: null,
+            ortho_status_history: [],
             createdAt: data.created_at
           };
 
@@ -2099,6 +2234,7 @@
           saveLocalData('documents', newPatient.id, newPatient.documents);
           saveLocalData('responsavelHistory', newPatient.id, newPatient.responsavelHistory);
           saveLocalData('financeiro', newPatient.id, newPatient.financeiro);
+          saveLocalData('orthoData', newPatient.id, { is_orthodontic_patient: false, ortho_status: null, ortho_status_updated_at: null, ortho_status_updated_by: null, ortho_status_history: [] });
 
           setPatients(prev => [newPatient, ...prev]);
           setNpForm({ codigo:"", name:"", birthDate:"", phone:"", email:"", address:"", responsavel_clinico_id:"", responsavel_orto_id:"" });
@@ -2668,6 +2804,9 @@
               {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && (
                 <button onClick={() => setShowRelatorio(true)} style={{ background:"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600 }}>📊 Relatórios</button>
               )}
+              {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && (
+                <button onClick={() => setShowRelatorioOrtho(true)} style={{ background:"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600 }}>🦷 Rel. Ortodontia</button>
+              )}
               {isAdmin && (
                 <>
                   <button onClick={() => setView("users")} style={{ background: view==="users"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600 }}>Usuários</button>
@@ -2714,6 +2853,10 @@
                         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                           {p.codigo && <span style={{ fontSize:11, fontWeight:700, color:"#0EA5E9", background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:6, padding:"2px 8px" }}>{p.codigo}</span>}
                           <span style={{ fontSize:16, fontWeight:700 }}>{p.name}</span>
+                          {p.is_orthodontic_patient && (() => {
+                            const sc = ORTHO_STATUS_COLORS[p.ortho_status] || { color:"#7C3AED", bg:"#F5F3FF" };
+                            return <span style={{ fontSize:10, fontWeight:700, color:sc.color, background:sc.bg, border:`1px solid ${sc.color}30`, borderRadius:6, padding:"2px 8px" }}>Orto: {p.ortho_status || "—"}</span>;
+                          })()}
                           {p.arrivalControl && (
                             <span style={{ fontSize:10, fontWeight:700, color:"#10B981", background:"#D1FAE5", border:"1px solid #6EE7B7", borderRadius:6, padding:"2px 8px" }}>
                               {p.arrivalControl.status === "aguardando" ? "⏳ Aguardando" : "👨‍⚕️ Em atendimento"}
@@ -2761,9 +2904,14 @@
               <div style={{ ...cardStyle, background:"linear-gradient(135deg,#F0F9FF,#F8FAFC)" }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start", flexWrap:"wrap", gap:12 }}>
                   <div style={{ flex:1 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
                       {selectedPatient.codigo && <span style={{ fontSize:13, fontWeight:700, color:"#0EA5E9", background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:8, padding:"4px 12px" }}>{selectedPatient.codigo}</span>}
                       <span style={{ fontSize:22, fontWeight:800 }}>{selectedPatient.name}</span>
+                      {selectedPatient.is_orthodontic_patient && (
+                        <span style={{ fontSize:11, fontWeight:700, color:"#7C3AED", background:"#F5F3FF", border:"1px solid #C4B5FD", borderRadius:8, padding:"4px 12px" }}>
+                          Paciente de Ortodontia
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize:13, color:"#64748B", marginTop:4, lineHeight:1.8 }}>
                       {selectedPatient.birthDate && <span>Nasc: {formatDate(selectedPatient.birthDate+"T12:00:00")} </span>}
@@ -2789,6 +2937,62 @@
                   </div>
                 </div>
               </div>
+
+              {/* Ortodontia Status */}
+              {selectedPatient.is_orthodontic_patient && (
+                <div style={{ ...cardStyle, marginBottom:0, background:"linear-gradient(135deg,#F5F3FF,#EDE9FE)", borderColor:"#C4B5FD" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:12, flex:1 }}>
+                      <div>
+                        <div style={{ fontSize:10, fontWeight:700, color:"#7C3AED", textTransform:"uppercase", marginBottom:4 }}>Status Ortodontia</div>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          {(() => {
+                            const sc = ORTHO_STATUS_COLORS[selectedPatient.ortho_status] || { color:"#64748B", bg:"#F1F5F9" };
+                            return <span style={{ fontSize:14, fontWeight:800, color:sc.color, background:sc.bg, border:`1px solid ${sc.color}30`, borderRadius:8, padding:"4px 14px" }}>{selectedPatient.ortho_status || "—"}</span>;
+                          })()}
+                        </div>
+                      </div>
+                      {selectedPatient.ortho_status_updated_at && (
+                        <div style={{ fontSize:10, color:"#8B5CF6" }}>
+                          Atualizado em {formatDate(selectedPatient.ortho_status_updated_at)} por {selectedPatient.ortho_status_updated_by || "—"}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      <select value={selectedPatient.ortho_status || ""} onChange={e => {
+                        const nv = e.target.value;
+                        if (nv && nv !== selectedPatient.ortho_status) {
+                          if (confirm(`Alterar status ortodôntico de "${selectedPatient.ortho_status || "—"}" para "${nv}"?`)) {
+                            updateOrthoStatus(selectedPatient.id, nv, "Alteração manual");
+                          } else { e.target.value = selectedPatient.ortho_status || ""; }
+                        }
+                      }} style={{ padding:"6px 10px", borderRadius:8, border:"1px solid #C4B5FD", fontSize:12, fontWeight:600, color:"#5B21B6", background:"#fff", cursor:"pointer", outline:"none" }}>
+                        {ORTHO_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      {isAdmin && (
+                        <button onClick={() => {
+                          if (confirm("Remover classificação de Ortodontia deste paciente?\n\nIsso não apaga os orçamentos, apenas remove o status ortodôntico.")) {
+                            removeOrthoClassification(selectedPatient.id);
+                          }
+                        }} style={{ ...btnDanger, fontSize:10, padding:"5px 8px", whiteSpace:"nowrap" }}>Remover Ortodontia</button>
+                      )}
+                    </div>
+                  </div>
+                  {/* Histórico de mudanças de status */}
+                  {selectedPatient.ortho_status_history && selectedPatient.ortho_status_history.length > 1 && (
+                    <details style={{ marginTop:10 }}>
+                      <summary style={{ fontSize:11, color:"#7C3AED", cursor:"pointer", fontWeight:600 }}>Histórico de alterações ({selectedPatient.ortho_status_history.length})</summary>
+                      <div style={{ marginTop:6, maxHeight:150, overflowY:"auto" }}>
+                        {[...selectedPatient.ortho_status_history].reverse().map(h => (
+                          <div key={h.id} style={{ fontSize:11, color:"#64748B", padding:"3px 0", borderBottom:"1px solid #E2E8F0" }}>
+                            <span style={{ fontWeight:600 }}>{formatDate(h.changed_at)}</span> — {h.old_status || "Nenhum"} → <strong>{h.new_status || "Removido"}</strong> — por {h.changed_by} {h.reason && <span style={{ fontStyle:"italic" }}>({h.reason})</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              )}
 
               {/* Action buttons */}
               <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
@@ -3799,6 +4003,128 @@
               <button onClick={() => { setShowArrivalControl(false); setArrivalPatientId(null); }} style={btnSecondary}>Cancelar</button>
               <button onClick={confirmArrival} style={btnPrimary}>👋 Confirmar Chegada</button>
             </div>
+          </Modal>
+
+          {/* ═══ RELATÓRIO ORTODONTIA ═══ */}
+          <Modal isOpen={showRelatorioOrtho} onClose={() => setShowRelatorioOrtho(false)} title="🦷 Relatório de Ortodontia" wide>
+            {(() => {
+              const orthoPatients = patients.filter(p => p.is_orthodontic_patient);
+              const filtered = orthoPatients.filter(p => {
+                if (orthoReportFilters.busca) {
+                  const q = orthoReportFilters.busca.toLowerCase();
+                  if (!p.name.toLowerCase().includes(q) && !(p.codigo||"").toLowerCase().includes(q) && !(p.phone||"").toLowerCase().includes(q)) return false;
+                }
+                if (orthoReportFilters.status.length > 0 && !orthoReportFilters.status.includes(p.ortho_status)) return false;
+                if (orthoReportFilters.profissional_id && p.responsavel_orto_id !== orthoReportFilters.profissional_id) return false;
+                return true;
+              });
+              return (
+                <div>
+                  {/* Filtros */}
+                  <div style={{ ...cardStyle, marginBottom:16 }}>
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:12 }}>
+                      <div>
+                        <label style={{ fontSize:12, fontWeight:600, color:"#334155", marginBottom:4, display:"block" }}>Buscar Paciente</label>
+                        <input value={orthoReportFilters.busca} onChange={e => setOrthoReportFilters(f => ({...f, busca: e.target.value}))} placeholder="Nome, código ou telefone..."
+                          style={{ width:"100%", padding:"8px 12px", borderRadius:8, border:"1px solid #CBD5E1", fontSize:13, outline:"none", boxSizing:"border-box" }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize:12, fontWeight:600, color:"#334155", marginBottom:4, display:"block" }}>Status Ortodontia (multi-select)</label>
+                        <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                          {ORTHO_STATUSES.map(s => {
+                            const active = orthoReportFilters.status.includes(s);
+                            const sc = ORTHO_STATUS_COLORS[s];
+                            return (
+                              <button key={s} onClick={() => setOrthoReportFilters(f => ({...f, status: active ? f.status.filter(x=>x!==s) : [...f.status, s]}))}
+                                style={{ fontSize:10, fontWeight:700, padding:"3px 8px", borderRadius:6, border:`1px solid ${active ? sc.color : "#CBD5E1"}`, background: active ? sc.bg : "#fff", color: active ? sc.color : "#64748B", cursor:"pointer" }}>
+                                {s}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <Select label="Profissional Orto" value={orthoReportFilters.profissional_id} onChange={e => setOrthoReportFilters(f => ({...f, profissional_id: e.target.value}))}
+                        options={[{value:"",label:"Todos"}, ...users.filter(u=>u.active).map(u=>({value:u.id,label:u.name}))]} />
+                    </div>
+                  </div>
+
+                  {/* Resumo */}
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(140px, 1fr))", gap:10, marginBottom:16 }}>
+                    <div style={{ ...cardStyle, background:"#F5F3FF", borderColor:"#C4B5FD", textAlign:"center" }}>
+                      <div style={{ fontSize:11, fontWeight:700, color:"#7C3AED" }}>Total Ortodontia</div>
+                      <div style={{ fontSize:24, fontWeight:800, color:"#5B21B6" }}>{orthoPatients.length}</div>
+                    </div>
+                    {ORTHO_STATUSES.slice(0,5).map(s => {
+                      const count = orthoPatients.filter(p => p.ortho_status === s).length;
+                      const sc = ORTHO_STATUS_COLORS[s];
+                      return (
+                        <div key={s} style={{ ...cardStyle, background:sc.bg, borderColor:sc.color+"40", textAlign:"center" }}>
+                          <div style={{ fontSize:10, fontWeight:700, color:sc.color }}>{s}</div>
+                          <div style={{ fontSize:20, fontWeight:800, color:sc.color }}>{count}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Tabela */}
+                  <div style={{ ...cardStyle }}>
+                    <div style={{ fontSize:14, fontWeight:700, color:"#0F172A", marginBottom:10 }}>Pacientes de Ortodontia ({filtered.length})</div>
+                    {filtered.length === 0 ? (
+                      <div style={{ textAlign:"center", padding:40, color:"#94A3B8" }}>Nenhum paciente encontrado com os filtros selecionados.</div>
+                    ) : (
+                      <div style={{ overflowX:"auto" }}>
+                        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                          <thead>
+                            <tr style={{ background:"#F8FAFC", borderBottom:"2px solid #E2E8F0" }}>
+                              <th style={{ padding:"8px 10px", textAlign:"left", fontWeight:700, color:"#334155" }}>Código</th>
+                              <th style={{ padding:"8px 10px", textAlign:"left", fontWeight:700, color:"#334155" }}>Paciente</th>
+                              <th style={{ padding:"8px 10px", textAlign:"left", fontWeight:700, color:"#334155" }}>Telefone</th>
+                              <th style={{ padding:"8px 10px", textAlign:"left", fontWeight:700, color:"#334155" }}>Status Ortodontia</th>
+                              <th style={{ padding:"8px 10px", textAlign:"left", fontWeight:700, color:"#334155" }}>Profissional Orto</th>
+                              <th style={{ padding:"8px 10px", textAlign:"left", fontWeight:700, color:"#334155" }}>Cadastro</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filtered.map(p => {
+                              const sc = ORTHO_STATUS_COLORS[p.ortho_status] || { color:"#64748B", bg:"#F1F5F9" };
+                              return (
+                                <tr key={p.id} style={{ borderBottom:"1px solid #F1F5F9", cursor:"pointer" }} onClick={() => { openPatient(p); setShowRelatorioOrtho(false); }}
+                                  onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background=""}>
+                                  <td style={{ padding:"8px 10px", fontWeight:600, color:"#0EA5E9" }}>{p.codigo || "—"}</td>
+                                  <td style={{ padding:"8px 10px", fontWeight:600 }}>{p.name}</td>
+                                  <td style={{ padding:"8px 10px", color:"#64748B" }}>{p.phone || "—"}</td>
+                                  <td style={{ padding:"8px 10px" }}>
+                                    <span style={{ fontSize:11, fontWeight:700, color:sc.color, background:sc.bg, border:`1px solid ${sc.color}30`, borderRadius:6, padding:"2px 8px" }}>{p.ortho_status || "—"}</span>
+                                  </td>
+                                  <td style={{ padding:"8px 10px", color:"#64748B" }}>{getUserName(p.responsavel_orto_id)}</td>
+                                  <td style={{ padding:"8px 10px", color:"#94A3B8" }}>{formatDate(p.createdAt)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Exportar */}
+                  {filtered.length > 0 && (
+                    <div style={{ display:"flex", justifyContent:"flex-end", marginTop:12 }}>
+                      <button onClick={() => {
+                        const headers = ["Código","Paciente","Telefone","Email","Status Ortodontia","Profissional Orto","Data Cadastro"];
+                        const rows = filtered.map(p => [p.codigo||"",p.name,p.phone||"",p.email||"",p.ortho_status||"",getUserName(p.responsavel_orto_id),formatDate(p.createdAt)]);
+                        const csv = [headers.join(";"), ...rows.map(r => r.join(";"))].join("\n");
+                        const blob = new Blob(["\uFEFF"+csv], {type:"text/csv;charset=utf-8;"});
+                        const a = document.createElement("a");
+                        a.href = URL.createObjectURL(blob);
+                        a.download = `relatorio_ortodontia_${formatDateISO(new Date())}.csv`;
+                        a.click();
+                      }} style={{...btnSecondary, fontSize:12}}>📥 Exportar CSV</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </Modal>
 
           {/* ═══ RELATÓRIO DE ATENDIMENTOS ═══ */}
