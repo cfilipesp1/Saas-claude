@@ -21,6 +21,7 @@ export default function PatientsClient({
   const [editing, setEditing] = useState<Patient | null>(null);
   const [search, setSearch] = useState(initialSearch);
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   function handleSearch(e: React.FormEvent) {
@@ -29,26 +30,41 @@ export default function PatientsClient({
   }
 
   function handleCreate(formData: FormData) {
+    setError(null);
     startTransition(async () => {
-      await createPatient(formData);
-      setShowForm(false);
-      router.refresh();
+      try {
+        await createPatient(formData);
+        setShowForm(false);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao criar paciente");
+      }
     });
   }
 
   function handleUpdate(formData: FormData) {
+    setError(null);
     startTransition(async () => {
-      await updatePatient(formData);
-      setEditing(null);
-      router.refresh();
+      try {
+        await updatePatient(formData);
+        setEditing(null);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao atualizar paciente");
+      }
     });
   }
 
   function handleDelete(id: string) {
     if (!confirm("Tem certeza que deseja excluir este paciente?")) return;
+    setError(null);
     startTransition(async () => {
-      await deletePatient(id);
-      router.refresh();
+      try {
+        await deletePatient(id);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao excluir paciente");
+      }
     });
   }
 
@@ -97,6 +113,16 @@ export default function PatientsClient({
 
   return (
     <div>
+      {/* Error banner */}
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
+          <span className="text-sm">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <h2 className="text-2xl font-bold text-slate-800">Pacientes</h2>
         <div className="flex items-center gap-3 w-full sm:w-auto">

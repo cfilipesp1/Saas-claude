@@ -18,34 +18,60 @@ export default function ProfessionalsClient({
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Professional | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   function handleCreate(formData: FormData) {
+    setError(null);
     startTransition(async () => {
-      await createProfessional(formData);
-      setShowForm(false);
-      router.refresh();
+      try {
+        await createProfessional(formData);
+        setShowForm(false);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao criar profissional");
+      }
     });
   }
 
   function handleUpdate(formData: FormData) {
+    setError(null);
     startTransition(async () => {
-      await updateProfessional(formData);
-      setEditing(null);
-      router.refresh();
+      try {
+        await updateProfessional(formData);
+        setEditing(null);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao atualizar profissional");
+      }
     });
   }
 
   function handleDelete(id: string) {
     if (!confirm("Tem certeza que deseja excluir?")) return;
+    setError(null);
     startTransition(async () => {
-      await deleteProfessional(id);
-      router.refresh();
+      try {
+        await deleteProfessional(id);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao excluir profissional");
+      }
     });
   }
 
   return (
     <div>
+      {/* Error banner */}
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
+          <span className="text-sm">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-slate-800">Profissionais</h2>
         <button

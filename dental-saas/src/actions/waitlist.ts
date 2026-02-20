@@ -38,6 +38,8 @@ export async function createWaitlistEntry(formData: FormData) {
   } = await supabase.auth.getUser();
 
   const patient_id = formData.get("patient_id") as string;
+  if (!patient_id) throw new Error("Paciente é obrigatório");
+
   const specialty = (formData.get("specialty") as string) || "";
   const preferred_professional_id =
     (formData.get("preferred_professional_id") as string) || null;
@@ -60,8 +62,8 @@ export async function createWaitlistEntry(formData: FormData) {
 
   if (error) throw new Error(error.message);
 
-  // Create initial event
-  await supabase.from("waitlist_events").insert({
+  // Create initial event (best-effort: don't fail the whole operation if event logging fails)
+  const { error: eventError } = await supabase.from("waitlist_events").insert({
     waitlist_entry_id: entry.id,
     from_status: null,
     to_status: "NEW",
@@ -69,6 +71,10 @@ export async function createWaitlistEntry(formData: FormData) {
     note: "Paciente adicionado à fila",
     clinic_id: "00000000-0000-0000-0000-000000000000", // overwritten by trigger
   });
+
+  if (eventError) {
+    console.error("Failed to create initial waitlist event:", eventError.message);
+  }
 
   revalidatePath("/waitlist");
 }
@@ -87,11 +93,13 @@ export async function updateWaitlistStatus(
   const { error } = await supabase
     .from("waitlist_entries")
     .update({ status: toStatus })
-    .eq("id", entryId);
+    .eq("id", entryId)
+    .eq("status", fromStatus); // Optimistic lock: only update if status hasn't changed
 
   if (error) throw new Error(error.message);
 
-  await supabase.from("waitlist_events").insert({
+  // Create status change event (best-effort)
+  const { error: eventError } = await supabase.from("waitlist_events").insert({
     waitlist_entry_id: entryId,
     from_status: fromStatus,
     to_status: toStatus,
@@ -99,6 +107,10 @@ export async function updateWaitlistStatus(
     note: note || `Status alterado de ${fromStatus} para ${toStatus}`,
     clinic_id: "00000000-0000-0000-0000-000000000000", // overwritten by trigger
   });
+
+  if (eventError) {
+    console.error("Failed to create waitlist status event:", eventError.message);
+  }
 
   revalidatePath("/waitlist");
 }

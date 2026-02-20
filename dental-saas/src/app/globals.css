@@ -1,11 +1,5 @@
 @import "tailwindcss";
 
-:root {
-  --primary: #0891b2;
-  --primary-dark: #0e7490;
-}
-
 body {
   font-family: system-ui, -apple-system, sans-serif;
-  background: #f8fafc;
 }

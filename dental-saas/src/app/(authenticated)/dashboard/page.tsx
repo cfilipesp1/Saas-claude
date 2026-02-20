@@ -1,5 +1,6 @@
 import { createServerSupabase } from "@/lib/supabase/server";
 import { Users, UserRound, ClipboardList } from "lucide-react";
+import Link from "next/link";
 
 export default async function DashboardPage() {
   const supabase = await createServerSupabase();
@@ -47,7 +48,7 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {cards.map((c) => (
-          <a
+          <Link
             key={c.label}
             href={c.href}
             className="bg-white rounded-xl border border-slate-200 p-6 hover:shadow-md transition"
@@ -61,7 +62,7 @@ export default async function DashboardPage() {
                 <p className="text-sm text-slate-500">{c.label}</p>
               </div>
             </div>
-          </a>
+          </Link>
         ))}
       </div>
     </div>

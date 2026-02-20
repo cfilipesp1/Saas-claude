@@ -8,7 +8,7 @@ export default async function AuthenticatedLayout({
   children: React.ReactNode;
 }) {
   const profile = await getProfile();
-  if (!profile) redirect("/login");
+  if (!profile) redirect("/login?error=no_profile");
 
   const clinic = await getClinic();
   const clinicName = clinic?.name ?? "Clínica";

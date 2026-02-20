@@ -22,20 +22,28 @@ export async function upsertAnamnesis(patientId: string, formData: FormData) {
   const boolField = (name: string) => formData.get(name) === "on";
   const textField = (name: string) => (formData.get(name) as string) || "";
 
+  // Clear detail fields when the corresponding boolean is off
+  const has_allergy = boolField("has_allergy");
+  const has_heart_disease = boolField("has_heart_disease");
+  const has_diabetes = boolField("has_diabetes");
+  const has_hypertension = boolField("has_hypertension");
+  const has_bleeding_disorder = boolField("has_bleeding_disorder");
+  const uses_medication = boolField("uses_medication");
+
   const payload = {
     patient_id: patientId,
-    has_allergy: boolField("has_allergy"),
-    allergy_details: textField("allergy_details"),
-    has_heart_disease: boolField("has_heart_disease"),
-    heart_details: textField("heart_details"),
-    has_diabetes: boolField("has_diabetes"),
-    diabetes_details: textField("diabetes_details"),
-    has_hypertension: boolField("has_hypertension"),
-    hypertension_details: textField("hypertension_details"),
-    has_bleeding_disorder: boolField("has_bleeding_disorder"),
-    bleeding_details: textField("bleeding_details"),
-    uses_medication: boolField("uses_medication"),
-    medication_details: textField("medication_details"),
+    has_allergy,
+    allergy_details: has_allergy ? textField("allergy_details") : "",
+    has_heart_disease,
+    heart_details: has_heart_disease ? textField("heart_details") : "",
+    has_diabetes,
+    diabetes_details: has_diabetes ? textField("diabetes_details") : "",
+    has_hypertension,
+    hypertension_details: has_hypertension ? textField("hypertension_details") : "",
+    has_bleeding_disorder,
+    bleeding_details: has_bleeding_disorder ? textField("bleeding_details") : "",
+    uses_medication,
+    medication_details: uses_medication ? textField("medication_details") : "",
     is_pregnant: boolField("is_pregnant"),
     is_smoker: boolField("is_smoker"),
     other_conditions: textField("other_conditions"),
@@ -45,26 +53,16 @@ export async function upsertAnamnesis(patientId: string, formData: FormData) {
     updated_at: new Date().toISOString(),
   };
 
-  // Check if anamnesis already exists
-  const { data: existing } = await supabase
-    .from("anamnesis")
-    .select("id")
-    .eq("patient_id", patientId)
-    .single();
-
-  if (existing) {
-    const { error } = await supabase
-      .from("anamnesis")
-      .update(payload)
-      .eq("id", existing.id);
-    if (error) throw new Error(error.message);
-  } else {
-    const { error } = await supabase.from("anamnesis").insert({
+  // Use upsert to avoid read-then-write race condition
+  const { error } = await supabase.from("anamnesis").upsert(
+    {
       ...payload,
       clinic_id: "00000000-0000-0000-0000-000000000000", // overwritten by trigger
-    });
-    if (error) throw new Error(error.message);
-  }
+    },
+    { onConflict: "patient_id" }
+  );
+
+  if (error) throw new Error(error.message);
 
   revalidatePath(`/patients/${patientId}`);
 }

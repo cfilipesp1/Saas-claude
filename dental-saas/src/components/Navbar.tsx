@@ -21,6 +21,11 @@ const links = [
   { href: "/waitlist", label: "Fila de Espera", icon: ClipboardList },
 ];
 
+function isActive(pathname: string, href: string): boolean {
+  if (href === "/dashboard") return pathname === "/dashboard";
+  return pathname === href || pathname.startsWith(href + "/");
+}
+
 export default function Navbar({
   clinicName,
   userName,
@@ -48,13 +53,14 @@ export default function Navbar({
           <p className="text-xs text-slate-500 mt-1 truncate">{clinicName}</p>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1" aria-label="Navegação principal">
           {links.map((l) => {
-            const active = pathname === l.href;
+            const active = isActive(pathname, l.href);
             return (
               <Link
                 key={l.href}
                 href={l.href}
+                aria-current={active ? "page" : undefined}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
                   active
                     ? "bg-cyan-50 text-cyan-700"
@@ -83,7 +89,11 @@ export default function Navbar({
       {/* Mobile header */}
       <header className="md:hidden flex items-center justify-between bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-40">
         <h1 className="text-lg font-bold text-cyan-700">O+ Dental</h1>
-        <button onClick={() => setMobileOpen(!mobileOpen)}>
+        <button
+          onClick={() => setMobileOpen(!mobileOpen)}
+          aria-label={mobileOpen ? "Fechar menu" : "Abrir menu"}
+          aria-expanded={mobileOpen}
+        >
           {mobileOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
       </header>
@@ -98,14 +108,15 @@ export default function Navbar({
               <h1 className="text-xl font-bold text-cyan-700">O+ Dental</h1>
               <p className="text-xs text-slate-500 mt-1">{clinicName}</p>
             </div>
-            <nav className="p-4 space-y-1">
+            <nav className="p-4 space-y-1" aria-label="Navegação principal">
               {links.map((l) => {
-                const active = pathname === l.href;
+                const active = isActive(pathname, l.href);
                 return (
                   <Link
                     key={l.href}
                     href={l.href}
                     onClick={() => setMobileOpen(false)}
+                    aria-current={active ? "page" : undefined}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
                       active
                         ? "bg-cyan-50 text-cyan-700"

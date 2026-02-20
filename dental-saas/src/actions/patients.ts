@@ -19,9 +19,13 @@ export async function getPatients(search?: string) {
   let query = supabase.from("patients").select("*").order("name");
 
   if (search) {
-    query = query.or(
-      `name.ilike.%${search}%,phone.ilike.%${search}%,cpf.ilike.%${search}%,email.ilike.%${search}%`
-    );
+    // Sanitize search input: escape PostgREST special chars to prevent query injection
+    const sanitized = search.replace(/[%_\\,.()"']/g, "");
+    if (sanitized.length > 0) {
+      query = query.or(
+        `name.ilike.%${sanitized}%,phone.ilike.%${sanitized}%,cpf.ilike.%${sanitized}%,email.ilike.%${sanitized}%`
+      );
+    }
   }
 
   const { data, error } = await query;
@@ -32,8 +36,13 @@ export async function getPatients(search?: string) {
 export async function createPatient(formData: FormData) {
   const supabase = await createServerSupabase();
 
+  const name = formData.get("name");
+  if (!name || typeof name !== "string" || name.trim().length === 0) {
+    throw new Error("Nome é obrigatório");
+  }
+
   const { error } = await supabase.from("patients").insert({
-    name: formData.get("name") as string,
+    name: name.trim(),
     phone: (formData.get("phone") as string) || "",
     email: (formData.get("email") as string) || "",
     cpf: (formData.get("cpf") as string) || "",
@@ -50,10 +59,15 @@ export async function updatePatient(formData: FormData) {
   const supabase = await createServerSupabase();
   const id = formData.get("id") as string;
 
+  const name = formData.get("name");
+  if (!id || !name || typeof name !== "string" || name.trim().length === 0) {
+    throw new Error("ID e nome são obrigatórios");
+  }
+
   const { error } = await supabase
     .from("patients")
     .update({
-      name: formData.get("name") as string,
+      name: name.trim(),
       phone: (formData.get("phone") as string) || "",
       email: (formData.get("email") as string) || "",
       cpf: (formData.get("cpf") as string) || "",

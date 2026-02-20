@@ -1,27 +1,6 @@
 "use server";
 
 import { createServerSupabase } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
-
-export async function loginAction(formData: FormData) {
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-
-  const supabase = await createServerSupabase();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  redirect("/dashboard");
-}
-
-export async function logoutAction() {
-  const supabase = await createServerSupabase();
-  await supabase.auth.signOut();
-  redirect("/login");
-}
 
 export async function getProfile() {
   const supabase = await createServerSupabase();
@@ -42,6 +21,25 @@ export async function getProfile() {
 
 export async function getClinic() {
   const supabase = await createServerSupabase();
-  const { data } = await supabase.from("clinics").select("*").single();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  // Get the user's profile to find their clinic_id
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("clinic_id")
+    .eq("user_id", user.id)
+    .single();
+
+  if (!profile?.clinic_id) return null;
+
+  const { data } = await supabase
+    .from("clinics")
+    .select("*")
+    .eq("id", profile.clinic_id)
+    .single();
   return data;
 }

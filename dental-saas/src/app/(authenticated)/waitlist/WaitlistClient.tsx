@@ -104,44 +104,64 @@ export default function WaitlistClient({
   const [eventsModal, setEventsModal] = useState<string | null>(null);
   const [events, setEvents] = useState<WaitlistEvent[]>([]);
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   function handleCreate(formData: FormData) {
+    setError(null);
     startTransition(async () => {
-      await createWaitlistEntry(formData);
-      setShowForm(false);
-      router.refresh();
+      try {
+        await createWaitlistEntry(formData);
+        setShowForm(false);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao adicionar à fila");
+      }
     });
   }
 
   function handleStatusChange() {
     if (!statusModal) return;
+    setError(null);
     startTransition(async () => {
-      await updateWaitlistStatus(
-        statusModal.id,
-        statusModal.status,
-        newStatus,
-        statusNote
-      );
-      setStatusModal(null);
-      setStatusNote("");
-      router.refresh();
+      try {
+        await updateWaitlistStatus(
+          statusModal.id,
+          statusModal.status,
+          newStatus,
+          statusNote
+        );
+        setStatusModal(null);
+        setStatusNote("");
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao alterar status");
+      }
     });
   }
 
   function handleDelete(id: string) {
     if (!confirm("Excluir este item da fila?")) return;
+    setError(null);
     startTransition(async () => {
-      await deleteWaitlistEntry(id);
-      router.refresh();
+      try {
+        await deleteWaitlistEntry(id);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao excluir item");
+      }
     });
   }
 
   function openEvents(entryId: string) {
     startTransition(async () => {
-      const evts = await getWaitlistEvents(entryId);
-      setEvents(evts);
-      setEventsModal(entryId);
+      try {
+        const evts = await getWaitlistEvents(entryId);
+        setEvents(evts);
+        setEventsModal(entryId);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao carregar histórico");
+      }
     });
   }
 
@@ -224,6 +244,16 @@ export default function WaitlistClient({
 
   return (
     <div>
+      {/* Error banner */}
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
+          <span className="text-sm">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-slate-800">Fila de Espera</h2>
         <button

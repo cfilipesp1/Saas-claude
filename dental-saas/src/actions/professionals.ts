@@ -15,12 +15,14 @@ export async function getProfessionals() {
 
 export async function createProfessional(formData: FormData) {
   const supabase = await createServerSupabase();
-  const name = formData.get("name") as string;
+  const name = formData.get("name");
+  if (!name || typeof name !== "string" || name.trim().length === 0) {
+    throw new Error("Nome é obrigatório");
+  }
   const specialty = formData.get("specialty") as string;
 
-  // clinic_id is set automatically by the trigger — send a placeholder that gets overwritten
   const { error } = await supabase.from("professionals").insert({
-    name,
+    name: name.trim(),
     specialty: specialty || "",
     clinic_id: "00000000-0000-0000-0000-000000000000", // overwritten by trigger
   });
@@ -32,13 +34,16 @@ export async function createProfessional(formData: FormData) {
 export async function updateProfessional(formData: FormData) {
   const supabase = await createServerSupabase();
   const id = formData.get("id") as string;
-  const name = formData.get("name") as string;
+  const name = formData.get("name");
+  if (!id || !name || typeof name !== "string" || name.trim().length === 0) {
+    throw new Error("ID e nome são obrigatórios");
+  }
   const specialty = formData.get("specialty") as string;
   const active = formData.get("active") === "true";
 
   const { error } = await supabase
     .from("professionals")
-    .update({ name, specialty, active })
+    .update({ name: name.trim(), specialty, active })
     .eq("id", id);
 
   if (error) throw new Error(error.message);

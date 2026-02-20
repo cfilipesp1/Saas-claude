@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useTransition, useMemo } from "react";
 import { updatePatient } from "@/actions/patients";
 import { upsertAnamnesis } from "@/actions/anamnesis";
 import type { Patient, Anamnesis } from "@/lib/types";
@@ -40,6 +40,47 @@ function buildAlertItems(anamnesis: Anamnesis | null): string[] {
   return items;
 }
 
+// Extracted outside the main component to avoid re-creation on every render
+function AnamnesisToggle({
+  name,
+  label,
+  detailName,
+  detailLabel,
+  checked,
+  detail,
+}: {
+  name: string;
+  label: string;
+  detailName?: string;
+  detailLabel?: string;
+  checked: boolean;
+  detail?: string;
+}) {
+  const [on, setOn] = useState(checked);
+  return (
+    <div className="space-y-1">
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          name={name}
+          defaultChecked={checked}
+          onChange={(e) => setOn(e.target.checked)}
+          className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+        />
+        <span className="text-sm text-slate-700">{label}</span>
+      </label>
+      {detailName && on && (
+        <input
+          name={detailName}
+          defaultValue={detail || ""}
+          placeholder={detailLabel || "Detalhes..."}
+          className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
+        />
+      )}
+    </div>
+  );
+}
+
 export default function PatientDetailClient({
   patient,
   anamnesis,
@@ -49,6 +90,7 @@ export default function PatientDetailClient({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   // Tabs
   const [tab, setTab] = useState<"dados" | "anamnese">("dados");
@@ -56,74 +98,53 @@ export default function PatientDetailClient({
 
   // Alert popup — shows on mount if anamnesis has relevant flags
   const [showAlert, setShowAlert] = useState(false);
-  const alertItems = buildAlertItems(anamnesis);
+  const alertItems = useMemo(() => buildAlertItems(anamnesis), [anamnesis]);
 
   useEffect(() => {
     if (alertItems.length > 0) {
       setShowAlert(true);
     }
-  }, []);
+  }, [alertItems.length]);
 
   // ---- Patient data update ----
   function handleUpdatePatient(formData: FormData) {
+    setError(null);
     startTransition(async () => {
-      await updatePatient(formData);
-      setEditingData(false);
-      router.refresh();
+      try {
+        await updatePatient(formData);
+        setEditingData(false);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao atualizar paciente");
+      }
     });
   }
 
   // ---- Anamnesis update ----
   function handleSaveAnamnesis(formData: FormData) {
+    setError(null);
     startTransition(async () => {
-      await upsertAnamnesis(patient.id, formData);
-      router.refresh();
+      try {
+        await upsertAnamnesis(patient.id, formData);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao salvar anamnese");
+      }
     });
-  }
-
-  // ---- Anamnesis boolean+detail field helper ----
-  function AnamnesisToggle({
-    name,
-    label,
-    detailName,
-    detailLabel,
-    checked,
-    detail,
-  }: {
-    name: string;
-    label: string;
-    detailName?: string;
-    detailLabel?: string;
-    checked: boolean;
-    detail?: string;
-  }) {
-    const [on, setOn] = useState(checked);
-    return (
-      <div className="space-y-1">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            name={name}
-            defaultChecked={checked}
-            onChange={(e) => setOn(e.target.checked)}
-            className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
-          />
-          <span className="text-sm text-slate-700">{label}</span>
-        </label>
-        {detailName && on && (
-          <input
-            name={detailName}
-            defaultValue={detail || ""}
-            placeholder={detailLabel || "Detalhes..."}
-            className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
-          />
-        )}
-      </div>
-    );
   }
 
   return (
     <div>
+      {/* Error banner */}
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
+          <span className="text-sm">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Alert popup */}
       {showAlert && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
