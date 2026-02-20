@@ -1392,30 +1392,19 @@
 
       const addPagamento = async (patientId) => {
         if (!financeiroForm.valor || parseFloat(financeiroForm.valor) <= 0) return;
-        
+
         try {
-          // Criar no Supabase
-          const data = await createPaymentSupabase(patientId, financeiroForm);
-          
-          if (!data) {
-            alert('Erro ao adicionar pagamento: retorno vazio do servidor. Verifique o console (F12).');
+          const novoPagamento = await createPaymentSupabase(patientId, financeiroForm);
+
+          if (!novoPagamento) {
+            alert('Erro ao adicionar pagamento. Verifique o console (F12).');
             return;
           }
-          
-          const novoPagamento = {
-            id: data.id,
-            data: data.data,
-            valor: parseFloat(data.valor) || 0,
-            forma_pagamento: data.forma_pagamento,
-            observacao: data.observacao || '',
-            registrado_por: data.registrado_por || currentUser.name,
-            registrado_em: data.registrado_em
-          };
-          
-          // Atualizar estado local
-          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: [...p.financeiro.pagamentos, novoPagamento]}} : p));
-          setSelectedPatient(prev => prev ? {...prev, financeiro: {...prev.financeiro, pagamentos: [...prev.financeiro.pagamentos, novoPagamento]}} : prev);
-          addAudit("ADICIONAR_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Valor: R$ ${novoPagamento.valor.toFixed(2)} - ${novoPagamento.forma_pagamento === "avista" ? "À vista" : "Parcelado"}`);
+
+          // Atualizar estado local usando o objeto retornado diretamente
+          setPatients(prev => prev.map(p => p.id === patientId ? {...p, financeiro: {...p.financeiro, pagamentos: [novoPagamento, ...p.financeiro.pagamentos]}} : p));
+          setSelectedPatient(prev => prev ? {...prev, financeiro: {...prev.financeiro, pagamentos: [novoPagamento, ...prev.financeiro.pagamentos]}} : prev);
+          addAudit("ADICIONAR_PAGAMENTO","paciente",patientId,patients.find(p=>p.id===patientId)?.name||"",`Valor: R$ ${(parseFloat(novoPagamento.valor) || 0).toFixed(2)} - ${novoPagamento.forma_pagamento === "avista" ? "À vista" : "Parcelado"}`);
           setFinanceiroForm({ data: formatDateISO(new Date()), valor: "", forma_pagamento: "avista", observacao: "" });
         } catch (err) {
           console.error('Erro ao adicionar pagamento:', err);
@@ -2568,7 +2557,7 @@
                     <div style={{ textAlign:"center", padding:40, color:"#94A3B8" }}>Nenhum pagamento registrado</div>
                   ) : (
                     <div style={{ maxHeight:400, overflowY:"auto" }}>
-                      {selectedPatient.financeiro.pagamentos.sort((a, b) => new Date(b.data) - new Date(a.data)).map(pg => (
+                      {[...selectedPatient.financeiro.pagamentos].sort((a, b) => new Date(b.data) - new Date(a.data)).map(pg => (
                         <div key={pg.id} style={{ padding:12, background:"#F8FAFC", borderRadius:8, marginBottom:8, border:"1px solid #E2E8F0" }}>
                           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start", marginBottom:6 }}>
                             <div style={{ flex:1 }}>
