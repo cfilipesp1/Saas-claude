@@ -832,7 +832,7 @@
 
       const loadBudgetSupabase = async (patientId) => {
         const financeiro = getLocalData('financeiro', patientId) || { orcamento_total: 0, pagamentos: [] };
-        return { total_amount: financeiro.orcamento_total };
+        return { total_amount: parseFloat(financeiro.orcamento_total) || 0 };
       };
 
       // ── CRUD Financeiro: Pagamentos (localStorage — tabela payments não existe no DB) ──
@@ -1551,7 +1551,7 @@
 
             // Cálculos financeiros
             const valorTotal = patient.financeiro?.orcamento_total || 0;
-            const totalPago = patient.financeiro?.pagamentos.reduce((sum, p) => sum + p.valor, 0) || 0;
+            const totalPago = patient.financeiro?.pagamentos.reduce((sum, p) => sum + (parseFloat(p.valor) || 0), 0) || 0;
             const valorAberto = valorTotal - totalPago;
             const statusFinanceiro = valorTotal === 0 ? "sem_orcamento" : (valorAberto === 0 ? "pago" : (totalPago > 0 ? "parcial" : "aberto"));
 
@@ -1863,8 +1863,8 @@
                         <div style={{ fontSize:11, color:"#94A3B8" }}>{formatDate(p.createdAt)}</div>
                         <div style={{ fontSize:12, fontWeight:700, color:"#0EA5E9", marginTop:4, background:"#0EA5E910", padding:"2px 8px", borderRadius:6 }}>{(p.records || []).length} atend.</div>
                         {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && p.financeiro && p.financeiro.orcamento_total > 0 && (
-                          <div style={{ fontSize:11, fontWeight:700, color: p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + pg.valor, 0) > 0 ? "#EF4444" : "#10B981", marginTop:4, background: p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + pg.valor, 0) > 0 ? "#FEE2E2" : "#D1FAE5", padding:"2px 8px", borderRadius:6 }}>
-                            {p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + pg.valor, 0) > 0 ? "⚠️ Devendo" : "✓ Quitado"}
+                          <div style={{ fontSize:11, fontWeight:700, color: p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + (parseFloat(pg.valor) || 0), 0) > 0 ? "#EF4444" : "#10B981", marginTop:4, background: p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + (parseFloat(pg.valor) || 0), 0) > 0 ? "#FEE2E2" : "#D1FAE5", padding:"2px 8px", borderRadius:6 }}>
+                            {p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + (parseFloat(pg.valor) || 0), 0) > 0 ? "⚠️ Devendo" : "✓ Quitado"}
                           </div>
                         )}
                       </div>
@@ -2534,15 +2534,15 @@
                   <div style={{ ...cardStyle, background:"#F0FDF4", borderColor:"#10B981" }}>
                     <div style={{ fontSize:12, fontWeight:600, color:"#059669", marginBottom:4 }}>✓ Total Pago</div>
                     <div style={{ fontSize:22, fontWeight:800, color:"#10B981" }}>
-                      R$ {selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0).toFixed(2).replace(".", ",")}
+                      R$ {selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + (parseFloat(p.valor) || 0), 0).toFixed(2).replace(".", ",")}
                     </div>
                   </div>
-                  <div style={{ ...cardStyle, background: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "#FEF2F2" : "#F0FDF4", borderColor: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "#EF4444" : "#10B981" }}>
-                    <div style={{ fontSize:12, fontWeight:600, color: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "#DC2626" : "#059669", marginBottom:4 }}>
-                      {selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "⚠️ Saldo Devedor" : "✓ Quitado"}
+                  <div style={{ ...cardStyle, background: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + (parseFloat(p.valor) || 0), 0) > 0 ? "#FEF2F2" : "#F0FDF4", borderColor: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + (parseFloat(p.valor) || 0), 0) > 0 ? "#EF4444" : "#10B981" }}>
+                    <div style={{ fontSize:12, fontWeight:600, color: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + (parseFloat(p.valor) || 0), 0) > 0 ? "#DC2626" : "#059669", marginBottom:4 }}>
+                      {selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + (parseFloat(p.valor) || 0), 0) > 0 ? "⚠️ Saldo Devedor" : "✓ Quitado"}
                     </div>
-                    <div style={{ fontSize:22, fontWeight:800, color: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0) > 0 ? "#EF4444" : "#10B981" }}>
-                      R$ {Math.abs(selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + p.valor, 0)).toFixed(2).replace(".", ",")}
+                    <div style={{ fontSize:22, fontWeight:800, color: selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + (parseFloat(p.valor) || 0), 0) > 0 ? "#EF4444" : "#10B981" }}>
+                      R$ {Math.abs(selectedPatient.financeiro.orcamento_total - selectedPatient.financeiro.pagamentos.reduce((sum, p) => sum + (parseFloat(p.valor) || 0), 0)).toFixed(2).replace(".", ",")}
                     </div>
                   </div>
                 </div>
