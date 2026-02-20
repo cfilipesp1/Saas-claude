@@ -1398,7 +1398,7 @@
 
       // ── Patient CRUD ──
       const createPatient = async () => {
-        if (!npForm.name.trim() || (!npForm.responsavel_clinico_id && !npForm.responsavel_orto_id)) return;
+        if (!npForm.name.trim()) return;
         
         try {
           const { data, error } = await supabase
