@@ -1050,6 +1050,25 @@
     function Badge({ text, color }) {
       return (<span style={{ display:"inline-flex", alignItems:"center", gap:4, background:color+"18", color, border:`1px solid ${color}40`, borderRadius:8, padding:"4px 10px", fontSize:12, fontWeight:600, margin:"2px 4px 2px 0" }}>{text}</span>);
     }
+    // ── StatusChip Component ──
+    function StatusChip({ label, color, bg, small }) {
+      return (
+        <span style={{ display:"inline-flex", alignItems:"center", fontSize: small ? 10 : 11, fontWeight:600, color, background: bg || (color + "14"), border:`1px solid ${color}25`, borderRadius:6, padding: small ? "2px 6px" : "3px 10px", letterSpacing:0.1, whiteSpace:"nowrap" }}>
+          {label}
+        </span>
+      );
+    }
+    // ── FAB Component ──
+    function FAB({ onClick, label }) {
+      return (
+        <button onClick={onClick} style={{ position:"fixed", bottom:24, right:24, zIndex:90, width:56, height:56, borderRadius:16, background:"#0EA5E9", color:"#fff", border:"none", fontSize:28, fontWeight:300, cursor:"pointer", boxShadow:"0 4px 20px rgba(14,165,233,0.35)", display:"flex", alignItems:"center", justifyContent:"center", transition:"transform 0.2s, box-shadow 0.2s" }}
+          onMouseEnter={e => { e.currentTarget.style.transform="scale(1.08)"; e.currentTarget.style.boxShadow="0 6px 28px rgba(14,165,233,0.5)"; }}
+          onMouseLeave={e => { e.currentTarget.style.transform="scale(1)"; e.currentTarget.style.boxShadow="0 4px 20px rgba(14,165,233,0.4)"; }}
+          title={label || "Novo"}>
+          +
+        </button>
+      );
+    }
     // SVG tooth shapes for visual odontogram
     const ToothSVG = ({ type, number, isSelected, onClick }) => {
       const baseColor = isSelected ? "#0EA5E9" : "#B8C5D6";
@@ -1194,6 +1213,11 @@
       const [docDateFilter, setDocDateFilter] = useState("");
 
       // ── Modals ──
+      const [showAppMenu, setShowAppMenu] = useState(false);
+      const [activeTab, setActiveTab] = useState("fila");
+      const [swipingCardId, setSwipingCardId] = useState(null);
+      const [swipeX, setSwipeX] = useState(0);
+      const [touchStartX, setTouchStartX] = useState(0);
       const [showNewPatient, setShowNewPatient] = useState(false);
       const [showNewRecord, setShowNewRecord] = useState(false);
       const [showAnamnesis, setShowAnamnesis] = useState(false);
@@ -2727,10 +2751,10 @@
       const allUserOpts = [{ value:"", label:"Selecione..." }, ...users.filter(u=>u.active && u.id !== "admin1").map(u => ({ value:u.id, label:`${u.name} (${ROLE_LABELS[u.role]})` }))];
 
       // ── Styles ──
-      const btnPrimary = { background:"linear-gradient(135deg,#0EA5E9,#0284C7)", color:"#fff", border:"none", borderRadius:10, padding:"10px 20px", fontSize:14, fontWeight:700, cursor:"pointer", display:"inline-flex", alignItems:"center", gap:6 };
-      const btnSecondary = { background:"#F1F5F9", color:"#475569", border:"1.5px solid #E2E8F0", borderRadius:10, padding:"10px 20px", fontSize:14, fontWeight:600, cursor:"pointer" };
+      const btnPrimary = { background:"#0EA5E9", color:"#fff", border:"none", borderRadius:10, padding:"10px 20px", fontSize:14, fontWeight:700, cursor:"pointer", display:"inline-flex", alignItems:"center", gap:6, transition:"background 0.15s" };
+      const btnSecondary = { background:"#F1F5F9", color:"#475569", border:"1.5px solid #E2E8F0", borderRadius:10, padding:"10px 20px", fontSize:14, fontWeight:600, cursor:"pointer", transition:"background 0.15s" };
       const btnDanger = { ...btnSecondary, color:"#EF4444", borderColor:"#FECACA" };
-      const cardStyle = { background:"#fff", borderRadius:14, border:"1px solid #E2E8F0", padding:20, marginBottom:12, transition:"all 0.2s", boxShadow:"0 1px 3px rgba(0,0,0,0.04)" };
+      const cardStyle = { background:"#fff", borderRadius:12, border:"1px solid #E2E8F0", padding:16, marginBottom:10, transition:"all 0.2s", boxShadow:"0 1px 3px rgba(0,0,0,0.04)" };
 
       // ═══════════════════════════════════════════════════════════════════
       // LOGIN SCREEN
@@ -2760,140 +2784,312 @@
       return (
         <div>
           {/* ── HEADER ── */}
-          <div style={{ background:"linear-gradient(135deg,#0F172A 0%,#1E3A5F 100%)", color:"#fff", padding:"12px 24px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:100, flexWrap:"wrap", gap:8 }}>
+          {/* ═══ APP BAR ═══ */}
+          <div style={{ background:"#0F172A", color:"#fff", padding:"0 16px", height:52, display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:100 }}>
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              {(view === "patient" || view === "users" || view === "audit" || view === "queue") && (
-                <button onClick={() => { setView("list"); setSelectedPatient(null); }} style={{ background:"rgba(255,255,255,0.12)", border:"none", borderRadius:8, width:36, height:36, color:"#fff", cursor:"pointer", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center" }}>←</button>
-              )}
-              <div>
-                <div style={{ fontSize:18, fontWeight:800, letterSpacing:-0.5, cursor:"pointer" }} onClick={() => { setView("list"); setSelectedPatient(null); }}>🦷 O+ Fichas</div>
-                <div style={{ fontSize:10, opacity:0.5, fontWeight:500 }}>Prontuário Eletrônico</div>
-              </div>
-              {/* Indicador de Sincronização */}
-              {syncing && (
-                <div style={{ display:"flex", alignItems:"center", gap:6, background:"rgba(255,255,255,0.12)", padding:"6px 12px", borderRadius:8, fontSize:12 }}>
-                  <div style={{ width:12, height:12, border:"2px solid #fff", borderTopColor:"transparent", borderRadius:"50%", animation:"spin 0.8s linear infinite" }}></div>
-                  Sincronizando...
-                </div>
-              )}
-              {!syncing && realtimeChannels.length > 0 && (
-                <div style={{ display:"flex", alignItems:"center", gap:6, background:"rgba(34,197,94,0.15)", padding:"6px 12px", borderRadius:8, fontSize:12, color:"#22C55E" }}>
-                  ✓ Sincronizado
-                </div>
-              )}
-            </div>
-            <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-              {(currentUser.role === "PROFESSIONAL" || isAdminRole(currentUser.role)) && (
-                <button onClick={() => setView("queue")} style={{ background: view==="queue"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>
-                  ⏳ Fila de Atendimento
-                  {isAdminRole(currentUser.role) ? (
-                    patients.filter(p => p.arrivalControl?.status === "aguardando").length > 0 && (
-                      <span style={{ background:"#10B981", borderRadius:"50%", width:18, height:18, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700 }}>
-                        {patients.filter(p => p.arrivalControl?.status === "aguardando").length}
-                      </span>
-                    )
-                  ) : (
-                    patients.filter(p => p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando").length > 0 && (
-                      <span style={{ background:"#10B981", borderRadius:"50%", width:18, height:18, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700 }}>
-                        {patients.filter(p => p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando").length}
-                      </span>
-                    )
-                  )}
+              {view === "patient" && (
+                <button onClick={() => { setView("list"); setSelectedPatient(null); setActiveTab("pacientes"); }} style={{ background:"none", border:"none", color:"#fff", cursor:"pointer", fontSize:18, padding:4, display:"flex", alignItems:"center" }}>
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M13 15L8 10L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </button>
               )}
-              {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && (
-                <button onClick={() => setShowRelatorio(true)} style={{ background:"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600 }}>📊 Relatórios</button>
+              <div style={{ fontSize:16, fontWeight:700, letterSpacing:-0.3, cursor:"pointer" }} onClick={() => { setView("list"); setActiveTab("fila"); }}>O+ Fichas</div>
+              {/* Status chip */}
+              {syncing ? (
+                <StatusChip label="Sincronizando" color="#F59E0B" bg="rgba(245,158,11,0.15)" small />
+              ) : realtimeChannels.length > 0 ? (
+                <StatusChip label="Online" color="#22C55E" bg="rgba(34,197,94,0.15)" small />
+              ) : (
+                <StatusChip label="Offline" color="#EF4444" bg="rgba(239,68,68,0.15)" small />
               )}
-              {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && (
-                <button onClick={() => setShowRelatorioOrtho(true)} style={{ background:"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600 }}>🦷 Rel. Ortodontia</button>
-              )}
-              {isAdmin && (
+            </div>
+            <div style={{ position:"relative" }}>
+              <button onClick={() => setShowAppMenu(v => !v)} style={{ background:"rgba(255,255,255,0.08)", border:"none", borderRadius:8, width:36, height:36, color:"#fff", cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor"><circle cx="9" cy="3" r="1.5"/><circle cx="9" cy="9" r="1.5"/><circle cx="9" cy="15" r="1.5"/></svg>
+              </button>
+              {showAppMenu && (
                 <>
-                  <button onClick={() => setView("users")} style={{ background: view==="users"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600 }}>Usuários</button>
-                  <button onClick={() => setView("audit")} style={{ background: view==="audit"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600 }}>Auditoria</button>
+                  <div onClick={() => setShowAppMenu(false)} style={{ position:"fixed", inset:0, zIndex:199 }} />
+                  <div style={{ position:"absolute", right:0, top:42, background:"#fff", borderRadius:12, boxShadow:"0 8px 30px rgba(0,0,0,0.18)", minWidth:200, zIndex:200, overflow:"hidden", border:"1px solid #E2E8F0" }}>
+                    <div style={{ padding:"12px 16px", borderBottom:"1px solid #F1F5F9" }}>
+                      <div style={{ fontSize:13, fontWeight:700, color:"#0F172A" }}>{currentUser.name}</div>
+                      <div style={{ fontSize:11, color:"#94A3B8" }}>{ROLE_LABELS[currentUser.role]}</div>
+                    </div>
+                    {isAdmin && (
+                      <button onClick={() => { setView("users"); setShowAppMenu(false); }} style={{ width:"100%", textAlign:"left", background:"none", border:"none", padding:"10px 16px", fontSize:13, color:"#334155", cursor:"pointer", display:"flex", alignItems:"center", gap:8 }}
+                        onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background="none"}>
+                        <span style={{ fontSize:15 }}>👥</span> Usuários
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button onClick={() => { setView("audit"); setShowAppMenu(false); }} style={{ width:"100%", textAlign:"left", background:"none", border:"none", padding:"10px 16px", fontSize:13, color:"#334155", cursor:"pointer", display:"flex", alignItems:"center", gap:8 }}
+                        onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background="none"}>
+                        <span style={{ fontSize:15 }}>📋</span> Auditoria
+                      </button>
+                    )}
+                    <div style={{ borderTop:"1px solid #F1F5F9" }}>
+                      <button onClick={() => { handleLogout(); setShowAppMenu(false); }} style={{ width:"100%", textAlign:"left", background:"none", border:"none", padding:"10px 16px", fontSize:13, color:"#EF4444", cursor:"pointer", display:"flex", alignItems:"center", gap:8 }}
+                        onMouseEnter={e => e.currentTarget.style.background="#FEF2F2"} onMouseLeave={e => e.currentTarget.style.background="none"}>
+                        <span style={{ fontSize:15 }}>🚪</span> Sair
+                      </button>
+                    </div>
+                  </div>
                 </>
               )}
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginLeft:8 }}>
-                <div style={{ textAlign:"right" }}>
-                  <div style={{ fontSize:12, fontWeight:700 }}>{currentUser.name}</div>
-                  <div style={{ fontSize:10, opacity:0.6 }}>{ROLE_LABELS[currentUser.role]}</div>
-                </div>
-                <button onClick={handleLogout} style={{ background:"rgba(255,255,255,0.12)", border:"none", borderRadius:8, padding:"6px 10px", color:"#fff", cursor:"pointer", fontSize:11, fontWeight:600 }}>Sair</button>
-              </div>
             </div>
           </div>
 
-          {/* ═══ PATIENT LIST ═══ */}
+          {/* ═══ TABS ═══ */}
           {view === "list" && (
-            <div style={{ padding:"20px 24px", maxWidth:800, margin:"0 auto" }}>
-              <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
-                <input placeholder="Buscar por código, nome, email ou telefone..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                  style={{ flex:1, minWidth:200, padding:"12px 16px", borderRadius:12, border:"1.5px solid #CBD5E1", fontSize:14, outline:"none", background:"#fff", boxSizing:"border-box" }} />
-                <button onClick={() => setShowNewPatient(true)} style={btnPrimary}>+ Novo Paciente</button>
+            <div style={{ background:"#fff", borderBottom:"1px solid #E2E8F0", position:"sticky", top:52, zIndex:99, padding:"0 8px" }}>
+              <div style={{ display:"flex", maxWidth:800, margin:"0 auto", gap:0 }}>
+                {[
+                  { id:"fila", label:"Fila", badge: (() => { const c = patients.filter(p => isAdminRole(currentUser.role) ? p.arrivalControl?.status === "aguardando" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando")).length; return c > 0 ? c : null; })(), show: currentUser.role === "PROFESSIONAL" || isAdminRole(currentUser.role) || currentUser.role === "RECEPTION" },
+                  { id:"pacientes", label:"Pacientes", show: true },
+                  { id:"relatorios", label:"Relatórios", show: isAdminRole(currentUser.role) || currentUser.role === "RECEPTION" },
+                  { id:"admin", label:"Admin", show: isAdmin },
+                ].filter(t => t.show).map(tab => (
+                  <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                    style={{ flex:1, background:"none", border:"none", padding:"12px 8px", fontSize:13, fontWeight: activeTab === tab.id ? 700 : 500, color: activeTab === tab.id ? "#0EA5E9" : "#64748B", cursor:"pointer", position:"relative", display:"flex", alignItems:"center", justifyContent:"center", gap:5, transition:"color 0.2s", borderBottom: activeTab === tab.id ? "2px solid #0EA5E9" : "2px solid transparent" }}>
+                    {tab.label}
+                    {tab.badge && <span style={{ background:"#EF4444", color:"#fff", borderRadius:10, minWidth:18, height:18, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, padding:"0 4px" }}>{tab.badge}</span>}
+                  </button>
+                ))}
               </div>
+            </div>
+          )}
+
+          {/* ═══ TAB: FILA ═══ */}
+          {view === "list" && activeTab === "fila" && (
+            <div style={{ padding:"12px 16px", maxWidth:800, margin:"0 auto" }}>
+              {/* Aguardando */}
+              {(() => {
+                const aguardando = patients.filter(p => isAdminRole(currentUser.role) || currentUser.role === "RECEPTION" ? p.arrivalControl?.status === "aguardando" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando")).sort((a,b) => new Date(a.arrivalControl.arrivedAt) - new Date(b.arrivalControl.arrivedAt));
+                const emAtendimento = patients.filter(p => isAdminRole(currentUser.role) || currentUser.role === "RECEPTION" ? p.arrivalControl?.status === "em_atendimento" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "em_atendimento"));
+                return (
+                  <div>
+                    <div style={{ fontSize:12, fontWeight:700, color:"#94A3B8", textTransform:"uppercase", letterSpacing:0.5, marginBottom:8 }}>Aguardando ({aguardando.length})</div>
+                    {aguardando.length === 0 && (
+                      <div style={{ textAlign:"center", padding:32, color:"#CBD5E1", background:"#FAFBFC", borderRadius:12, border:"1px dashed #E2E8F0", marginBottom:20 }}>
+                        <div style={{ fontSize:32, marginBottom:4, opacity:0.5 }}>☕</div>
+                        <div style={{ fontSize:13, fontWeight:500 }}>Nenhum paciente na fila</div>
+                      </div>
+                    )}
+                    {aguardando.map(p => {
+                      const waitMins = Math.round((Date.now() - new Date(p.arrivalControl.arrivedAt).getTime()) / 60000);
+                      return (
+                        <div key={p.id} style={{ ...cardStyle, padding:0, overflow:"hidden", marginBottom:10, position:"relative" }}>
+                          {/* Swipe reveal actions */}
+                          <div style={{ position:"absolute", top:0, right:0, bottom:0, display:"flex", alignItems:"stretch", zIndex:1 }}>
+                            <button onClick={() => openPatient(p)} style={{ width:70, background:"#0EA5E9", color:"#fff", border:"none", fontSize:11, fontWeight:600, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2 }}>
+                              <span style={{ fontSize:16 }}>📋</span>Prontuário
+                            </button>
+                          </div>
+                          <div style={{ position:"relative", zIndex:2, background:"#fff", padding:"14px 16px", transform:`translateX(${swipingCardId === p.id ? Math.min(0, swipeX) : 0}px)`, transition: swipingCardId === p.id ? "none" : "transform 0.3s ease" }}
+                            onTouchStart={e => { setSwipingCardId(p.id); setTouchStartX(e.touches[0].clientX); setSwipeX(0); }}
+                            onTouchMove={e => { if (swipingCardId === p.id) { const dx = e.touches[0].clientX - touchStartX; setSwipeX(Math.max(-80, Math.min(0, dx))); } }}
+                            onTouchEnd={() => { if (Math.abs(swipeX) < 40) setSwipeX(0); else setSwipeX(-70); setTimeout(() => setSwipingCardId(null), 300); }}>
+                            {/* Line 1: Name + ID + Time */}
+                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                              <div style={{ display:"flex", alignItems:"center", gap:8, flex:1, minWidth:0 }}>
+                                <span style={{ fontSize:15, fontWeight:700, color:"#0F172A", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</span>
+                                {p.codigo && <span style={{ fontSize:10, color:"#94A3B8", fontWeight:500, flexShrink:0 }}>#{p.codigo}</span>}
+                              </div>
+                              <span style={{ fontSize:11, color:"#94A3B8", flexShrink:0, marginLeft:8 }}>{new Date(p.arrivalControl.arrivedAt).toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"})}</span>
+                            </div>
+                            {/* Line 2: Chips */}
+                            <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:8 }}>
+                              {p.is_orthodontic_patient ? (
+                                <StatusChip label="Orto" color="#7C3AED" small />
+                              ) : (
+                                <StatusChip label="Clínica Geral" color="#0EA5E9" small />
+                              )}
+                              <StatusChip label={`${waitMins}min espera`} color={waitMins > 30 ? "#EF4444" : waitMins > 15 ? "#F59E0B" : "#10B981"} small />
+                              {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && p.financeiro && p.financeiro.orcamento_total > 0 && (() => {
+                                const saldo = p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((s,pg) => s + (parseFloat(pg.valor)||0), 0);
+                                return saldo > 0 ? <StatusChip label="Devendo" color="#EF4444" small /> : <StatusChip label="Em dia" color="#10B981" small />;
+                              })()}
+                            </div>
+                            {/* Line 3: Meta + Action */}
+                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                              <div style={{ fontSize:11, color:"#94A3B8" }}>
+                                {isAdminRole(currentUser.role) && <span>Dr(a). {p.arrivalControl.dentista_name}</span>}
+                                {!isAdminRole(currentUser.role) && p.phone && <span>{p.phone}</span>}
+                              </div>
+                              {(currentUser.role === "PROFESSIONAL" || isAdminRole(currentUser.role)) && (
+                                <button onClick={() => startAttendance(p.id)} style={{ background:"#0EA5E9", color:"#fff", border:"none", borderRadius:8, padding:"6px 14px", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+                                  Atender
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Em Atendimento */}
+                    <div style={{ fontSize:12, fontWeight:700, color:"#94A3B8", textTransform:"uppercase", letterSpacing:0.5, marginTop:20, marginBottom:8 }}>Em Atendimento ({emAtendimento.length})</div>
+                    {emAtendimento.length === 0 && (
+                      <div style={{ textAlign:"center", padding:24, color:"#CBD5E1", background:"#FAFBFC", borderRadius:12, border:"1px dashed #E2E8F0" }}>
+                        <div style={{ fontSize:13, fontWeight:500 }}>Nenhum atendimento em andamento</div>
+                      </div>
+                    )}
+                    {emAtendimento.map(p => (
+                      <div key={p.id} style={{ ...cardStyle, padding:"14px 16px", marginBottom:10, borderLeft:"3px solid #10B981" }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:8, flex:1, minWidth:0 }}>
+                            <span style={{ fontSize:15, fontWeight:700, color:"#0F172A" }}>{p.name}</span>
+                            {p.codigo && <span style={{ fontSize:10, color:"#94A3B8" }}>#{p.codigo}</span>}
+                          </div>
+                          <StatusChip label="Em atendimento" color="#10B981" small />
+                        </div>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                          <div style={{ fontSize:11, color:"#64748B" }}>
+                            {isAdminRole(currentUser.role) && `Dr(a). ${p.arrivalControl.dentista_name} · `}
+                            Início: {new Date(p.arrivalControl.startedAt).toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"})}
+                          </div>
+                          <div style={{ display:"flex", gap:6 }}>
+                            <button onClick={() => openPatient(p)} style={{ background:"#F1F5F9", color:"#475569", border:"none", borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:600, cursor:"pointer" }}>Prontuário</button>
+                            <button onClick={() => finishAttendance(p.id)} style={{ background:"#10B981", color:"#fff", border:"none", borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:600, cursor:"pointer" }}>Finalizar</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* ═══ TAB: PACIENTES ═══ */}
+          {view === "list" && activeTab === "pacientes" && (
+            <div style={{ padding:"12px 16px", maxWidth:800, margin:"0 auto", paddingBottom:80 }}>
+              {/* Search full-width */}
+              <div style={{ position:"relative", marginBottom:12 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)", pointerEvents:"none" }}>
+                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                </svg>
+                <input placeholder="Buscar paciente por nome, código ou telefone" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                  style={{ width:"100%", padding:"12px 16px 12px 42px", borderRadius:12, border:"1.5px solid #E2E8F0", fontSize:14, outline:"none", background:"#FAFBFC", boxSizing:"border-box", transition:"border 0.2s" }}
+                  onFocus={e => e.target.style.borderColor="#0EA5E9"} onBlur={e => e.target.style.borderColor="#E2E8F0"} />
+              </div>
+
               {loadingPatients ? (
-                <div style={{ textAlign:"center", padding:60, color:"#94A3B8" }}>
-                  <div style={{ fontSize:48, marginBottom:12 }}>⏳</div>
-                  <div style={{ fontSize:16, fontWeight:600 }}>Carregando pacientes...</div>
+                <div style={{ textAlign:"center", padding:48, color:"#CBD5E1" }}>
+                  <div style={{ width:32, height:32, border:"3px solid #E2E8F0", borderTopColor:"#0EA5E9", borderRadius:"50%", animation:"spin 0.8s linear infinite", margin:"0 auto 12px" }}></div>
+                  <div style={{ fontSize:13, fontWeight:500 }}>Carregando...</div>
                 </div>
-              ) : filteredPatients.length === 0 && (
-                <div style={{ textAlign:"center", padding:60, color:"#94A3B8" }}>
-                  <div style={{ fontSize:48, marginBottom:12 }}>🦷</div>
-                  <div style={{ fontSize:16, fontWeight:600 }}>Nenhum paciente cadastrado</div>
-                  <div style={{ fontSize:13, marginTop:4 }}>Clique em "+ Novo Paciente" para começar</div>
+              ) : filteredPatients.length === 0 ? (
+                <div style={{ textAlign:"center", padding:48, color:"#CBD5E1" }}>
+                  <div style={{ fontSize:13, fontWeight:500 }}>Nenhum paciente encontrado</div>
                 </div>
-              )}
-              {filteredPatients.map(p => (
-                <div key={p.id} style={{...cardStyle, position:"relative"}}>
-                  <div onClick={() => openPatient(p)} style={{ cursor:"pointer" }}
-                    onMouseEnter={e => e.currentTarget.parentElement.style.borderColor="#0EA5E9"} 
-                    onMouseLeave={e => e.currentTarget.parentElement.style.borderColor="#E2E8F0"}>
-                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
-                      <div>
-                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                          {p.codigo && <span style={{ fontSize:11, fontWeight:700, color:"#0EA5E9", background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:6, padding:"2px 8px" }}>{p.codigo}</span>}
-                          <span style={{ fontSize:16, fontWeight:700 }}>{p.name}</span>
-                          {p.is_orthodontic_patient && (() => {
-                            const sc = ORTHO_STATUS_COLORS[p.ortho_status] || { color:"#7C3AED", bg:"#F5F3FF" };
-                            return <span style={{ fontSize:10, fontWeight:700, color:sc.color, background:sc.bg, border:`1px solid ${sc.color}30`, borderRadius:6, padding:"2px 8px" }}>Orto: {p.ortho_status || "—"}</span>;
-                          })()}
+              ) : (
+                filteredPatients.map(p => {
+                  const saldo = (p.financeiro?.orcamento_total || 0) - (p.financeiro?.pagamentos || []).reduce((s,pg) => s+(parseFloat(pg.valor)||0),0);
+                  const temFinanceiro = p.financeiro && p.financeiro.orcamento_total > 0;
+                  return (
+                    <div key={p.id} style={{ ...cardStyle, padding:0, overflow:"hidden", marginBottom:8, position:"relative" }}>
+                      {/* Swipe reveal: Chegou */}
+                      {(currentUser.role === "RECEPTION" || isAdminRole(currentUser.role)) && !p.arrivalControl && (
+                        <div style={{ position:"absolute", top:0, left:0, bottom:0, display:"flex", alignItems:"stretch", zIndex:1 }}>
+                          <button onClick={() => handleArrival(p.id)} style={{ width:80, background:"#10B981", color:"#fff", border:"none", fontSize:11, fontWeight:600, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2 }}>
+                            <span style={{ fontSize:18 }}>👋</span>Chegou
+                          </button>
+                        </div>
+                      )}
+                      <div style={{ position:"relative", zIndex:2, background:"#fff", padding:"14px 16px", transform:`translateX(${swipingCardId === p.id ? Math.max(0, swipeX) : 0}px)`, transition: swipingCardId === p.id ? "none" : "transform 0.3s ease", cursor:"pointer" }}
+                        onClick={() => openPatient(p)}
+                        onTouchStart={e => { if ((currentUser.role === "RECEPTION" || isAdminRole(currentUser.role)) && !p.arrivalControl) { setSwipingCardId(p.id); setTouchStartX(e.touches[0].clientX); setSwipeX(0); }}}
+                        onTouchMove={e => { if (swipingCardId === p.id) { const dx = e.touches[0].clientX - touchStartX; setSwipeX(Math.max(0, Math.min(80, dx))); } }}
+                        onTouchEnd={() => { if (swipeX > 50) { handleArrival(p.id); setSwipeX(0); } else { setSwipeX(0); } setTimeout(() => setSwipingCardId(null), 300); }}
+                        onMouseEnter={e => { e.currentTarget.parentElement.style.borderColor="#0EA5E920"; e.currentTarget.parentElement.style.boxShadow="0 2px 8px rgba(14,165,233,0.08)"; }}
+                        onMouseLeave={e => { e.currentTarget.parentElement.style.borderColor="#E2E8F0"; e.currentTarget.parentElement.style.boxShadow="0 1px 3px rgba(0,0,0,0.04)"; }}>
+                        {/* Line 1: Name + ID + Date */}
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:6, flex:1, minWidth:0 }}>
+                            <span style={{ fontSize:15, fontWeight:700, color:"#0F172A", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</span>
+                            {p.codigo && <span style={{ fontSize:10, color:"#94A3B8", flexShrink:0 }}>#{p.codigo}</span>}
+                          </div>
                           {p.arrivalControl && (
-                            <span style={{ fontSize:10, fontWeight:700, color:"#10B981", background:"#D1FAE5", border:"1px solid #6EE7B7", borderRadius:6, padding:"2px 8px" }}>
-                              {p.arrivalControl.status === "aguardando" ? "⏳ Aguardando" : "👨‍⚕️ Em atendimento"}
-                            </span>
+                            <StatusChip label={p.arrivalControl.status === "aguardando" ? "Na fila" : "Atendendo"} color={p.arrivalControl.status === "aguardando" ? "#F59E0B" : "#10B981"} small />
                           )}
                         </div>
-                        <div style={{ fontSize:12, color:"#64748B", marginTop:4 }}>
-                          {p.phone && `${p.phone}`}{p.email && ` · ${p.email}`}
+                        {/* Line 2: Chips */}
+                        <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:6 }}>
+                          {p.is_orthodontic_patient && (() => {
+                            const sc = ORTHO_STATUS_COLORS[p.ortho_status] || { color:"#7C3AED", bg:"#F5F3FF" };
+                            return <StatusChip label={`Orto · ${p.ortho_status || "—"}`} color={sc.color} bg={sc.bg} small />;
+                          })()}
+                          {!p.is_orthodontic_patient && <StatusChip label="Clínica Geral" color="#64748B" small />}
+                          {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && temFinanceiro && (
+                            saldo > 0 ? <StatusChip label="Devendo" color="#EF4444" small /> : <StatusChip label="Em dia" color="#10B981" small />
+                          )}
                         </div>
-                        <div style={{ fontSize:11, color:"#94A3B8", marginTop:4 }}>
-                          Clínico: <strong>{getUserName(p.responsavel_clinico_id)}</strong> · Orto: <strong>{getUserName(p.responsavel_orto_id)}</strong>
+                        {/* Line 3: Meta */}
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                          <div style={{ fontSize:11, color:"#94A3B8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                            {getUserName(p.responsavel_clinico_id) !== "—" && <span>Clínico: {getUserName(p.responsavel_clinico_id)}</span>}
+                            {getUserName(p.responsavel_orto_id) !== "—" && <span> · Orto: {getUserName(p.responsavel_orto_id)}</span>}
+                          </div>
+                          <span style={{ fontSize:10, color:"#CBD5E1", flexShrink:0, marginLeft:8 }}>{(p.records || []).length} atend.</span>
                         </div>
-                        {p.arrivalControl && (
-                          <div style={{ fontSize:11, color:"#10B981", marginTop:4, fontWeight:600 }}>
-                            Dentista: {p.arrivalControl.dentista_name} · Chegada: {new Date(p.arrivalControl.arrivedAt).toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"})}
-                          </div>
-                        )}
                       </div>
-                      <div style={{ textAlign:"right" }}>
-                        <div style={{ fontSize:11, color:"#94A3B8" }}>{formatDate(p.createdAt)}</div>
-                        <div style={{ fontSize:12, fontWeight:700, color:"#0EA5E9", marginTop:4, background:"#0EA5E910", padding:"2px 8px", borderRadius:6 }}>{(p.records || []).length} atend.</div>
-                        {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && p.financeiro && p.financeiro.orcamento_total > 0 && (
-                          <div style={{ fontSize:11, fontWeight:700, color: p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + (parseFloat(pg.valor) || 0), 0) > 0 ? "#EF4444" : "#10B981", marginTop:4, background: p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + (parseFloat(pg.valor) || 0), 0) > 0 ? "#FEE2E2" : "#D1FAE5", padding:"2px 8px", borderRadius:6 }}>
-                            {p.financeiro.orcamento_total - p.financeiro.pagamentos.reduce((sum, pg) => sum + (parseFloat(pg.valor) || 0), 0) > 0 ? "⚠️ Devendo" : "✓ Quitado"}
-                          </div>
-                        )}
-                      </div>
+                      {/* Compact arrival button (desktop only, not swipe) */}
+                      {(currentUser.role === "RECEPTION" || isAdminRole(currentUser.role)) && !p.arrivalControl && (
+                        <div style={{ padding:"0 16px 12px", background:"#fff", position:"relative", zIndex:2 }}>
+                          <button onClick={(e) => { e.stopPropagation(); handleArrival(p.id); }}
+                            style={{ width:"100%", background:"#F0FDF4", color:"#059669", border:"1px solid #BBF7D0", borderRadius:8, padding:"8px", fontSize:12, fontWeight:600, cursor:"pointer", transition:"all 0.15s" }}
+                            onMouseEnter={e => { e.currentTarget.style.background="#DCFCE7"; }}
+                            onMouseLeave={e => { e.currentTarget.style.background="#F0FDF4"; }}>
+                            Chegou
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                  {(currentUser.role === "RECEPTION" || isAdminRole(currentUser.role)) && !p.arrivalControl && (
-                    <button onClick={(e) => { e.stopPropagation(); handleArrival(p.id); }} 
-                      style={{ ...btnPrimary, marginTop:12, fontSize:13, padding:"8px 16px", width:"100%" }}>
-                      👋 Marcar Chegada
-                    </button>
-                  )}
-                </div>
-              ))}
+                  );
+                })
+              )}
+              {/* FAB: Novo Paciente */}
+              <FAB onClick={() => setShowNewPatient(true)} label="Novo Paciente" />
+            </div>
+          )}
+
+          {/* ═══ TAB: RELATÓRIOS ═══ */}
+          {view === "list" && activeTab === "relatorios" && (
+            <div style={{ padding:"16px", maxWidth:800, margin:"0 auto" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                <button onClick={() => setShowRelatorio(true)} style={{ ...cardStyle, cursor:"pointer", textAlign:"center", padding:24, marginBottom:0 }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor="#0EA5E9"} onMouseLeave={e => e.currentTarget.style.borderColor="#E2E8F0"}>
+                  <div style={{ fontSize:28, marginBottom:6 }}>📊</div>
+                  <div style={{ fontSize:14, fontWeight:700, color:"#0F172A" }}>Atendimentos</div>
+                  <div style={{ fontSize:11, color:"#94A3B8", marginTop:2 }}>Relatório por período</div>
+                </button>
+                <button onClick={() => setShowRelatorioOrtho(true)} style={{ ...cardStyle, cursor:"pointer", textAlign:"center", padding:24, marginBottom:0 }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor="#7C3AED"} onMouseLeave={e => e.currentTarget.style.borderColor="#E2E8F0"}>
+                  <div style={{ fontSize:28, marginBottom:6 }}>🦷</div>
+                  <div style={{ fontSize:14, fontWeight:700, color:"#0F172A" }}>Ortodontia</div>
+                  <div style={{ fontSize:11, color:"#94A3B8", marginTop:2 }}>Pacientes ortodônticos</div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ TAB: ADMIN ═══ */}
+          {view === "list" && activeTab === "admin" && isAdmin && (
+            <div style={{ padding:"16px", maxWidth:800, margin:"0 auto" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                <button onClick={() => setView("users")} style={{ ...cardStyle, cursor:"pointer", textAlign:"center", padding:24, marginBottom:0 }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor="#0EA5E9"} onMouseLeave={e => e.currentTarget.style.borderColor="#E2E8F0"}>
+                  <div style={{ fontSize:28, marginBottom:6 }}>👥</div>
+                  <div style={{ fontSize:14, fontWeight:700, color:"#0F172A" }}>Usuários</div>
+                  <div style={{ fontSize:11, color:"#94A3B8", marginTop:2 }}>Gerenciar equipe</div>
+                </button>
+                <button onClick={() => setView("audit")} style={{ ...cardStyle, cursor:"pointer", textAlign:"center", padding:24, marginBottom:0 }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor="#0EA5E9"} onMouseLeave={e => e.currentTarget.style.borderColor="#E2E8F0"}>
+                  <div style={{ fontSize:28, marginBottom:6 }}>📋</div>
+                  <div style={{ fontSize:14, fontWeight:700, color:"#0F172A" }}>Auditoria</div>
+                  <div style={{ fontSize:11, color:"#94A3B8", marginTop:2 }}>Histórico de ações</div>
+                </button>
+              </div>
             </div>
           )}
 
@@ -2997,10 +3193,10 @@
               {/* Action buttons */}
               <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap" }}>
                 <button onClick={() => { setAnamnesisForm({...defaultAnamnesis, ...selectedPatient.anamnesis}); setShowAnamnesis(true); setEditingAnamnesis(false); }} style={btnSecondary}>Anamnese</button>
-                <button onClick={() => { setOrcamentoView("list"); setShowOrcamentos(true); }} style={{...btnSecondary, background:"linear-gradient(135deg,#8B5CF6,#7C3AED)", color:"#fff"}}>📋 Orçamento</button>
+                <button onClick={() => { setOrcamentoView("list"); setShowOrcamentos(true); }} style={{...btnSecondary, background:"#7C3AED", color:"#fff", borderColor:"#7C3AED"}}>📋 Orçamento</button>
                 <button onClick={() => { docInputRef.current?.click(); }} style={btnSecondary}>Anexar Documento</button>
                 {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION") && (
-                  <button onClick={() => setShowFinanceiro(true)} style={{...btnSecondary, background:"linear-gradient(135deg,#10B981,#059669)", color:"#fff"}}>💰 Financeiro</button>
+                  <button onClick={() => setShowFinanceiro(true)} style={{...btnSecondary, background:"#059669", color:"#fff", borderColor:"#059669"}}>💰 Financeiro</button>
                 )}
                 <button onClick={() => setShowNewRecord(true)} style={btnPrimary}>+ Novo Atendimento</button>
                 <input ref={docInputRef} type="file" accept="image/*,.pdf,.docx" multiple onChange={handleDocUpload} style={{ display:"none" }} />
@@ -3187,106 +3383,6 @@
             </div>
           )}
 
-          {/* ═══ QUEUE VIEW ═══ */}
-          {view === "queue" && (currentUser.role === "PROFESSIONAL" || isAdminRole(currentUser.role)) && (
-            <div style={{ padding:"20px 24px", maxWidth:800, margin:"0 auto" }}>
-              <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A", marginBottom:16 }}>Fila de Atendimento</h2>
-              
-              {/* Aguardando Atendimento */}
-              <div style={{ marginBottom:24 }}>
-                <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
-                  ⏳ Aguardando ({patients.filter(p => isAdminRole(currentUser.role) ? p.arrivalControl?.status === "aguardando" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando")).length})
-                </div>
-                {patients
-                  .filter(p => isAdminRole(currentUser.role) ? p.arrivalControl?.status === "aguardando" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando"))
-                  .sort((a, b) => new Date(a.arrivalControl.arrivedAt) - new Date(b.arrivalControl.arrivedAt))
-                  .map(p => (
-                    <div key={p.id} style={{ ...cardStyle, marginBottom:12 }}>
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
-                        <div style={{ flex:1 }}>
-                          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-                            {p.codigo && <span style={{ fontSize:11, fontWeight:700, color:"#0EA5E9", background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:6, padding:"2px 8px" }}>{p.codigo}</span>}
-                            <span style={{ fontSize:16, fontWeight:700 }}>{p.name}</span>
-                          </div>
-                          <div style={{ fontSize:12, color:"#64748B", marginBottom:4 }}>
-                            {p.phone && `${p.phone}`}{p.email && ` · ${p.email}`}
-                          </div>
-                          <div style={{ fontSize:12, color:"#10B981", fontWeight:600 }}>
-                            {isAdminRole(currentUser.role) && (
-                              <>
-                                Dentista: {p.arrivalControl.dentista_name}
-                                {" · "}
-                              </>
-                            )}
-                            Chegada: {new Date(p.arrivalControl.arrivedAt).toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"})}
-                            {" · "}
-                            Registrado por: {p.arrivalControl.receptionist_name}
-                          </div>
-                        </div>
-                        <button onClick={() => startAttendance(p.id)} style={{ ...btnPrimary, fontSize:13, padding:"8px 16px", whiteSpace:"nowrap" }}>
-                          👨‍⚕️ Iniciar Atendimento
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                {patients.filter(p => isAdminRole(currentUser.role) ? p.arrivalControl?.status === "aguardando" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "aguardando")).length === 0 && (
-                  <div style={{ textAlign:"center", padding:40, color:"#94A3B8", background:"#F8FAFC", borderRadius:12, border:"1px solid #E2E8F0" }}>
-                    <div style={{ fontSize:48, marginBottom:8 }}>☕</div>
-                    <div style={{ fontSize:14, fontWeight:600 }}>Nenhum paciente aguardando</div>
-                  </div>
-                )}
-              </div>
-
-              {/* Em Atendimento */}
-              <div>
-                <div style={{ fontSize:16, fontWeight:700, color:"#0F172A", marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
-                  👨‍⚕️ Em Atendimento ({patients.filter(p => isAdminRole(currentUser.role) ? p.arrivalControl?.status === "em_atendimento" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "em_atendimento")).length})
-                </div>
-                {patients
-                  .filter(p => isAdminRole(currentUser.role) ? p.arrivalControl?.status === "em_atendimento" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "em_atendimento"))
-                  .map(p => (
-                    <div key={p.id} style={{ ...cardStyle, marginBottom:12, borderColor:"#10B981" }}>
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"start" }}>
-                        <div style={{ flex:1 }}>
-                          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-                            {p.codigo && <span style={{ fontSize:11, fontWeight:700, color:"#0EA5E9", background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:6, padding:"2px 8px" }}>{p.codigo}</span>}
-                            <span style={{ fontSize:16, fontWeight:700 }}>{p.name}</span>
-                            <span style={{ fontSize:10, fontWeight:700, color:"#10B981", background:"#D1FAE5", border:"1px solid #6EE7B7", borderRadius:6, padding:"2px 8px" }}>
-                              👨‍⚕️ Em atendimento
-                            </span>
-                          </div>
-                          <div style={{ fontSize:12, color:"#64748B", marginBottom:4 }}>
-                            {p.phone && `${p.phone}`}{p.email && ` · ${p.email}`}
-                          </div>
-                          <div style={{ fontSize:12, color:"#10B981", fontWeight:600 }}>
-                            {isAdminRole(currentUser.role) && (
-                              <>
-                                Dentista: {p.arrivalControl.dentista_name}
-                                {" · "}
-                              </>
-                            )}
-                            Início: {new Date(p.arrivalControl.startedAt).toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"})}
-                          </div>
-                        </div>
-                        <div style={{ display:"flex", gap:8 }}>
-                          <button onClick={() => openPatient(p)} style={{ ...btnSecondary, fontSize:13, padding:"8px 16px" }}>
-                            Ver Prontuário
-                          </button>
-                          <button onClick={() => finishAttendance(p.id)} style={{ ...btnPrimary, fontSize:13, padding:"8px 16px", background:"linear-gradient(135deg,#10B981,#059669)" }}>
-                            ✓ Finalizar
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                {patients.filter(p => isAdminRole(currentUser.role) ? p.arrivalControl?.status === "em_atendimento" : (p.arrivalControl?.dentista_id === currentUser.id && p.arrivalControl?.status === "em_atendimento")).length === 0 && (
-                  <div style={{ textAlign:"center", padding:40, color:"#94A3B8", background:"#F8FAFC", borderRadius:12, border:"1px solid #E2E8F0" }}>
-                    <div style={{ fontSize:14, fontWeight:600 }}>Nenhum atendimento em andamento</div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* ═══ NEW PATIENT MODAL ═══ */}
           <Modal isOpen={showNewPatient} onClose={() => setShowNewPatient(false)} title="Novo Paciente" wide>
@@ -3467,7 +3563,7 @@
                     options={[{value:"",label:"Selecione o motivo..."},{value:"Cobertura",label:"Cobertura"},{value:"Urgência",label:"Urgência"},{value:"Encaixe",label:"Encaixe"},{value:"Substituição",label:"Substituição"},{value:"Outro",label:"Outro"}]} />
                   <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
                     <button onClick={() => { setShowRespCheck(false); setPendingRecord(null); }} style={btnSecondary}>Cancelar</button>
-                    <button onClick={confirmOutOfResp} style={{ ...btnPrimary, background:"linear-gradient(135deg,#F59E0B,#D97706)", opacity:!respCheckMotivo?0.5:1 }} disabled={!respCheckMotivo}>Confirmar Atendimento</button>
+                    <button onClick={confirmOutOfResp} style={{ ...btnPrimary, background:"#D97706", opacity:!respCheckMotivo?0.5:1 }} disabled={!respCheckMotivo}>Confirmar Atendimento</button>
                   </div>
                 </div>
               );
