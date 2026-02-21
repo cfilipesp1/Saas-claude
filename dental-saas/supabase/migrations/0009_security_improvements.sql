@@ -6,12 +6,12 @@
 
 -- ─── HELPER: Get current user's role ──────────────────────────
 create or replace function public.current_user_role()
-returns public.user_role
+returns text
 language sql
 stable
 security definer
 as $$
-  select role from public.profiles where user_id = auth.uid();
+  select role::text from public.profiles where user_id = auth.uid();
 $$;
 
 -- ─── HELPER: Check if current user is admin-level ─────────────
