@@ -1,7 +1,7 @@
 -- ============================================================
 -- O+ Dental SaaS — Security & Scalability Improvements
 -- Migration 0009: Role-based RLS, atomic operations, indexes,
---                 updated_at triggers
+--                 updated_at triggers, cron for overdue items
 -- ============================================================
 
 -- ─── HELPER: Get current user's role ──────────────────────────
@@ -113,7 +113,7 @@ create policy "waitlist_entries_delete" on public.waitlist_entries
     and public.current_user_role() in ('OWNER', 'ADMIN', 'MANAGER')
   );
 
--- profiles: restrict update to own profile only, admin can see all clinic profiles
+-- profiles: admin can see all clinic profiles
 drop policy if exists "profiles_select" on public.profiles;
 create policy "profiles_select" on public.profiles
   for select using (
@@ -145,6 +145,7 @@ declare
   v_due integer;
   v_base_date date;
   v_due_date date;
+  v_last_day integer;
 begin
   v_clinic_id := public.current_clinic_id();
   if v_clinic_id is null then
@@ -166,12 +167,10 @@ begin
 
   -- Generate receivables for all months
   for i in 0..(v_months - 1) loop
-    v_base_date := p_start_date + (i || ' months')::interval;
-    v_due_date := make_date(
-      extract(year from v_base_date)::int,
-      extract(month from v_base_date)::int,
-      least(v_due, extract(day from (date_trunc('month', v_base_date) + interval '1 month - 1 day'))::int)
-    );
+    v_base_date := p_start_date + (i * interval '1 month');
+    -- Calculate last day of the target month to avoid overflow
+    v_last_day := extract(day from (date_trunc('month', v_base_date) + interval '1 month' - interval '1 day'));
+    v_due_date := date_trunc('month', v_base_date) + (least(v_due, v_last_day) - 1) * interval '1 day';
 
     insert into public.receivables (
       clinic_id, patient_id, origin_type, origin_id,
@@ -179,7 +178,7 @@ begin
       amount, status, description
     ) values (
       v_clinic_id, p_patient_id, 'ortho_contract', v_contract_id,
-      i + 1, v_months, v_due_date,
+      i + 1, v_months, v_due_date::date,
       p_monthly_amount, 'open',
       'Ortodontia - Mês ' || (i + 1) || '/' || v_months
     );
@@ -297,7 +296,11 @@ begin
     raise exception 'Receivable not found';
   end if;
 
-  v_status := case when p_paid_amount >= v_rec.amount then 'paid'::public.receivable_status else 'open'::public.receivable_status end;
+  if p_paid_amount >= v_rec.amount then
+    v_status := 'paid';
+  else
+    v_status := 'open';
+  end if;
 
   update public.receivables
   set status = v_status,
@@ -346,7 +349,11 @@ begin
     raise exception 'Payable not found';
   end if;
 
-  v_status := case when p_paid_amount >= v_pay.amount then 'paid'::public.payable_status else 'open'::public.payable_status end;
+  if p_paid_amount >= v_pay.amount then
+    v_status := 'paid';
+  else
+    v_status := 'open';
+  end if;
 
   update public.payables
   set status = v_status,
@@ -417,29 +424,52 @@ alter table public.budgets add column if not exists updated_at timestamptz not n
 alter table public.categories add column if not exists updated_at timestamptz not null default now();
 alter table public.cost_centers add column if not exists updated_at timestamptz not null default now();
 
--- Create triggers for all tables
+-- Drop triggers first (idempotent) then recreate
+drop trigger if exists trg_clinics_updated_at on public.clinics;
 create trigger trg_clinics_updated_at before update on public.clinics
   for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_profiles_updated_at on public.profiles;
 create trigger trg_profiles_updated_at before update on public.profiles
   for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_professionals_updated_at on public.professionals;
 create trigger trg_professionals_updated_at before update on public.professionals
   for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_patients_updated_at on public.patients;
 create trigger trg_patients_updated_at before update on public.patients
   for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_waitlist_entries_updated_at on public.waitlist_entries;
 create trigger trg_waitlist_entries_updated_at before update on public.waitlist_entries
   for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_financial_transactions_updated_at on public.financial_transactions;
 create trigger trg_financial_transactions_updated_at before update on public.financial_transactions
   for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_receivables_updated_at on public.receivables;
 create trigger trg_receivables_updated_at before update on public.receivables
   for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_payables_updated_at on public.payables;
 create trigger trg_payables_updated_at before update on public.payables
   for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_ortho_contracts_updated_at on public.ortho_contracts;
 create trigger trg_ortho_contracts_updated_at before update on public.ortho_contracts
   for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_budgets_updated_at on public.budgets;
 create trigger trg_budgets_updated_at before update on public.budgets
   for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_categories_updated_at on public.categories;
 create trigger trg_categories_updated_at before update on public.categories
   for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_cost_centers_updated_at on public.cost_centers;
 create trigger trg_cost_centers_updated_at before update on public.cost_centers
   for each row execute function public.set_updated_at();
 
@@ -464,3 +494,27 @@ begin
     and due_date < current_date;
 end;
 $$;
+
+-- ============================================================
+-- 6. CRON JOB — Habilitar extensoes e agendar mark_overdue
+--    NOTA: pg_cron precisa ser habilitado no Supabase Dashboard
+--          Database > Extensions > procure "pg_cron" > Enable
+--          Depois rode esta secao novamente.
+-- ============================================================
+
+-- Habilita as extensoes necessarias (se ja estiverem habilitadas, nao faz nada)
+create extension if not exists pg_cron schema pg_catalog;
+create extension if not exists pg_net schema extensions;
+
+-- Remove cron anterior se existir, depois cria novo
+select cron.unschedule('mark-overdue-daily')
+where exists (
+  select 1 from cron.job where jobname = 'mark-overdue-daily'
+);
+
+-- Agendar execucao diaria as 06:00 UTC
+select cron.schedule(
+  'mark-overdue-daily',
+  '0 6 * * *',
+  $$select public.mark_overdue_items()$$
+);
