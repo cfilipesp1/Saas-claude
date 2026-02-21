@@ -496,25 +496,9 @@ end;
 $$;
 
 -- ============================================================
--- 6. CRON JOB — Habilitar extensoes e agendar mark_overdue
---    NOTA: pg_cron precisa ser habilitado no Supabase Dashboard
---          Database > Extensions > procure "pg_cron" > Enable
---          Depois rode esta secao novamente.
+-- 6. MARCAR ITENS VENCIDOS
+--    A funcao mark_overdue_items() acima pode ser chamada:
+--    a) Pelo app no login/carregamento do dashboard
+--    b) Por uma Supabase Edge Function agendada
+--    c) Por pg_cron (requer plano Pro do Supabase)
 -- ============================================================
-
--- Habilita as extensoes necessarias (se ja estiverem habilitadas, nao faz nada)
-create extension if not exists pg_cron schema pg_catalog;
-create extension if not exists pg_net schema extensions;
-
--- Remove cron anterior se existir, depois cria novo
-select cron.unschedule('mark-overdue-daily')
-where exists (
-  select 1 from cron.job where jobname = 'mark-overdue-daily'
-);
-
--- Agendar execucao diaria as 06:00 UTC
-select cron.schedule(
-  'mark-overdue-daily',
-  '0 6 * * *',
-  $$select public.mark_overdue_items()$$
-);
