@@ -1,11 +1,13 @@
 "use client";
 
-import { Smile, Stethoscope } from "lucide-react";
+import { Smile, Sparkles, Stethoscope } from "lucide-react";
+
+export type BudgetTypeOption = "ORTHO_FIXA" | "INVISALIGN" | "SPECIALTY";
 
 export default function BudgetTypeStep({
   onSelect,
 }: {
-  onSelect: (type: "ORTHO" | "SPECIALTY") => void;
+  onSelect: (type: BudgetTypeOption) => void;
 }) {
   return (
     <div>
@@ -16,9 +18,9 @@ export default function BudgetTypeStep({
         Selecione o tipo de orçamento
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl mx-auto">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl mx-auto">
         <button
-          onClick={() => onSelect("ORTHO")}
+          onClick={() => onSelect("ORTHO_FIXA")}
           className="group bg-white rounded-xl border-2 border-slate-200 hover:border-cyan-400 p-8 transition-all hover:shadow-lg text-left"
         >
           <div className="flex flex-col items-center text-center gap-4">
@@ -26,12 +28,32 @@ export default function BudgetTypeStep({
               <Smile size={40} className="text-cyan-600" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-800">Ortodontia</h3>
+              <h3 className="text-lg font-bold text-slate-800">Ortodontia Fixa</h3>
               <p className="text-sm text-slate-500 mt-1">
-                Aparelho tradicional, cerâmico, autoligado, safira ou Invisalign
+                Aparelho tradicional, cerâmico, autoligado ou safira
               </p>
             </div>
             <span className="text-sm font-medium text-cyan-600 group-hover:text-cyan-700">
+              Escolher →
+            </span>
+          </div>
+        </button>
+
+        <button
+          onClick={() => onSelect("INVISALIGN")}
+          className="group bg-white rounded-xl border-2 border-slate-200 hover:border-violet-400 p-8 transition-all hover:shadow-lg text-left"
+        >
+          <div className="flex flex-col items-center text-center gap-4">
+            <div className="p-4 bg-violet-50 rounded-2xl group-hover:bg-violet-100 transition">
+              <Sparkles size={40} className="text-violet-600" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-slate-800">Invisalign</h3>
+              <p className="text-sm text-slate-500 mt-1">
+                Alinhadores transparentes e estéticos
+              </p>
+            </div>
+            <span className="text-sm font-medium text-violet-600 group-hover:text-violet-700">
               Escolher →
             </span>
           </div>
