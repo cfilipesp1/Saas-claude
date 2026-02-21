@@ -478,6 +478,23 @@
       const [relatorioFilters, setRelatorioFilters] = useState({ profissional_id: "", data_inicio: formatDateISO(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), data_fim: formatDateISO(new Date()), busca: "" });
       const [relatorioSort, setRelatorioSort] = useState({ field: "date", direction: "desc" });
 
+      // ── Agenda State ──
+      const [appointments, setAppointments] = useState([]);
+      const [agendaDate, setAgendaDate] = useState(new Date());
+      const [agendaView, setAgendaView] = useState("month"); // month | week | day
+      const [showApptForm, setShowApptForm] = useState(false);
+      const [editingAppt, setEditingAppt] = useState(null);
+      const emptyApptForm = { title:"", patient_id:"", professional_id:"", start_at:"", end_at:"", notes:"", status:"scheduled" };
+      const [apptForm, setApptForm] = useState({...emptyApptForm});
+      const APPT_STATUSES = {
+        scheduled: { label:"Agendado", color:"#3B82F6", bg:"#EFF6FF" },
+        confirmed: { label:"Confirmado", color:"#10B981", bg:"#F0FDF4" },
+        in_progress: { label:"Em Atendimento", color:"#F59E0B", bg:"#FFFBEB" },
+        completed: { label:"Concluído", color:"#059669", bg:"#ECFDF5" },
+        cancelled: { label:"Cancelado", color:"#94A3B8", bg:"#F8FAFC" },
+        no_show: { label:"Não Compareceu", color:"#EF4444", bg:"#FEF2F2" },
+      };
+
       // ── Refs ──
       const photoInputRef = useRef(null);
       const docInputRef = useRef(null);
@@ -1567,6 +1584,96 @@
         }
       };
 
+      // ── Agenda CRUD ──
+      const loadAppointments = useCallback(async () => {
+        const y = agendaDate.getFullYear(), m = agendaDate.getMonth();
+        const start = new Date(y, m - 1, 1).toISOString();
+        const end = new Date(y, m + 2, 0, 23, 59, 59).toISOString();
+        const { data, error } = await supabase.from("appointments")
+          .select("*").gte("start_at", start).lte("start_at", end).order("start_at");
+        if (!error && data) setAppointments(data);
+      }, [agendaDate]);
+
+      useEffect(() => { if (currentUser) loadAppointments(); }, [currentUser, loadAppointments]);
+
+      const saveAppointment = async () => {
+        if (!apptForm.title.trim() || !apptForm.professional_id || !apptForm.start_at || !apptForm.end_at) {
+          alert("Preencha título, profissional, início e término."); return;
+        }
+        const payload = {
+          title: apptForm.title.trim(),
+          patient_id: apptForm.patient_id || null,
+          professional_id: apptForm.professional_id,
+          start_at: apptForm.start_at,
+          end_at: apptForm.end_at,
+          notes: apptForm.notes || "",
+          status: apptForm.status || "scheduled",
+        };
+        let err;
+        if (editingAppt) {
+          const res = await supabase.from("appointments").update(payload).eq("id", editingAppt.id);
+          err = res.error;
+        } else {
+          const res = await supabase.from("appointments").insert(payload);
+          err = res.error;
+        }
+        if (err) { alert("Erro: " + err.message); return; }
+        setShowApptForm(false); setEditingAppt(null); setApptForm({...emptyApptForm});
+        loadAppointments();
+      };
+
+      const deleteAppt = async (id) => {
+        if (!confirm("Excluir este agendamento?")) return;
+        await supabase.from("appointments").delete().eq("id", id);
+        loadAppointments();
+      };
+
+      const updateApptStatus = async (id, status) => {
+        await supabase.from("appointments").update({ status }).eq("id", id);
+        loadAppointments();
+      };
+
+      const openNewAppt = (dateStr) => {
+        const d = dateStr || formatDateISO(new Date());
+        setApptForm({ ...emptyApptForm, start_at: d + "T09:00", end_at: d + "T09:30" });
+        setEditingAppt(null);
+        setShowApptForm(true);
+      };
+
+      const openEditAppt = (appt) => {
+        setApptForm({
+          title: appt.title, patient_id: appt.patient_id || "", professional_id: appt.professional_id,
+          start_at: appt.start_at?.slice(0,16) || "", end_at: appt.end_at?.slice(0,16) || "",
+          notes: appt.notes || "", status: appt.status || "scheduled",
+        });
+        setEditingAppt(appt);
+        setShowApptForm(true);
+      };
+
+      // Agenda helpers
+      const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+      const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
+      const formatMonthYear = (d) => d.toLocaleDateString("pt-BR", { month:"long", year:"numeric" });
+      const isSameDay = (d1, d2) => d1.getFullYear()===d2.getFullYear() && d1.getMonth()===d2.getMonth() && d1.getDate()===d2.getDate();
+      const getApptsForDay = (day) => appointments.filter(a => {
+        const d = new Date(a.start_at);
+        return d.getFullYear()===day.getFullYear() && d.getMonth()===day.getMonth() && d.getDate()===day.getDate();
+      });
+      const navigateAgenda = (dir) => {
+        const d = new Date(agendaDate);
+        if (agendaView === "month") d.setMonth(d.getMonth() + dir);
+        else if (agendaView === "week") d.setDate(d.getDate() + 7 * dir);
+        else d.setDate(d.getDate() + dir);
+        setAgendaDate(d);
+      };
+      const getWeekDays = (d) => {
+        const start = new Date(d); start.setDate(start.getDate() - start.getDay());
+        return Array.from({length:7}, (_,i) => { const dd = new Date(start); dd.setDate(start.getDate()+i); return dd; });
+      };
+      const AGENDA_HOURS = Array.from({length:14}, (_,i) => i+7);
+      const getApptUserName = (id) => users.find(u => u.id === id)?.name || "—";
+      const getApptPatientName = (pid) => patients.find(p => p.id === pid)?.name || "";
+
       // ── Relatório ──
       const getRelatorioData = () => {
         const allRecords = [];
@@ -1785,7 +1892,7 @@
           {/* ── HEADER ── */}
           <div style={{ background:"linear-gradient(135deg,#0F172A 0%,#1E3A5F 100%)", color:"#fff", padding:"12px 24px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:100, flexWrap:"wrap", gap:8 }}>
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              {(view === "patient" || view === "users" || view === "audit" || view === "queue" || view === "budgets" || view === "financial") && (
+              {(view === "patient" || view === "users" || view === "audit" || view === "queue" || view === "budgets" || view === "financial" || view === "schedule") && (
                 <button onClick={() => { setView("list"); setSelectedPatient(null); }} style={{ background:"rgba(255,255,255,0.12)", border:"none", borderRadius:8, width:36, height:36, color:"#fff", cursor:"pointer", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center" }}>←</button>
               )}
               <div>
@@ -1824,6 +1931,9 @@
                   )}
                 </button>
               )}
+              <button onClick={() => setView("schedule")} style={{ background: view==="schedule"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>
+                📅 Agenda
+              </button>
               {(isAdminRole(currentUser.role) || currentUser.role === "RECEPTION" || currentUser.role === "MANAGER") && (
                 <button onClick={() => setView("budgets")} style={{ background: view==="budgets"?"rgba(255,255,255,0.2)":"rgba(255,255,255,0.08)", border:"none", borderRadius:8, padding:"6px 14px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>
                   📋 Orçamentos
@@ -2485,6 +2595,199 @@
               })()}
             </div>
           )}
+
+          {/* ═══ SCHEDULE / AGENDA ═══ */}
+          {view === "schedule" && (
+            <div style={{ padding:"20px 24px", maxWidth:1100, margin:"0 auto" }}>
+              {/* Header */}
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+                <h2 style={{ fontSize:20, fontWeight:800, color:"#0F172A" }}>📅 Agenda</h2>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  {["month","week","day"].map(v => (
+                    <button key={v} onClick={() => setAgendaView(v)} style={{ padding:"6px 14px", borderRadius:8, border: agendaView===v ? "2px solid #0EA5E9" : "1.5px solid #CBD5E1", background: agendaView===v ? "#F0F9FF" : "#fff", color: agendaView===v ? "#0EA5E9" : "#475569", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                      {v==="month"?"Mês":v==="week"?"Semana":"Dia"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Navigation */}
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+                <button onClick={() => navigateAgenda(-1)} style={{ ...btnSecondary, padding:"8px 16px" }}>← Anterior</button>
+                <div style={{ textAlign:"center" }}>
+                  <div style={{ fontSize:18, fontWeight:700, color:"#0F172A", textTransform:"capitalize" }}>{formatMonthYear(agendaDate)}</div>
+                  <button onClick={() => setAgendaDate(new Date())} style={{ background:"none", border:"none", color:"#0EA5E9", cursor:"pointer", fontSize:12, fontWeight:600, marginTop:4 }}>Hoje</button>
+                </div>
+                <button onClick={() => navigateAgenda(1)} style={{ ...btnSecondary, padding:"8px 16px" }}>Próximo →</button>
+              </div>
+
+              {/* ── Month View ── */}
+              {agendaView === "month" && (() => {
+                const y = agendaDate.getFullYear(), m = agendaDate.getMonth();
+                const daysInMonth = getDaysInMonth(y, m);
+                const firstDay = getFirstDayOfMonth(y, m);
+                const today = new Date();
+                const cells = [];
+                for (let i = 0; i < firstDay; i++) cells.push(null);
+                for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+                return (
+                  <div>
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:1, background:"#E2E8F0", borderRadius:12, overflow:"hidden", border:"1px solid #E2E8F0" }}>
+                      {["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"].map(d => (
+                        <div key={d} style={{ background:"#F1F5F9", padding:"8px 4px", textAlign:"center", fontSize:11, fontWeight:700, color:"#64748B" }}>{d}</div>
+                      ))}
+                      {cells.map((day, i) => {
+                        if (day === null) return <div key={"e"+i} style={{ background:"#F8FAFC", minHeight:80 }}></div>;
+                        const dateObj = new Date(y, m, day);
+                        const dayAppts = getApptsForDay(dateObj);
+                        const isToday = isSameDay(dateObj, today);
+                        return (
+                          <div key={day} onClick={() => { setAgendaDate(dateObj); setAgendaView("day"); }}
+                            style={{ background: isToday ? "#F0F9FF" : "#fff", minHeight:80, padding:4, cursor:"pointer", position:"relative", transition:"background 0.15s" }}
+                            onMouseOver={e => e.currentTarget.style.background="#F8FAFC"}
+                            onMouseOut={e => e.currentTarget.style.background=isToday?"#F0F9FF":"#fff"}>
+                            <div style={{ fontSize:12, fontWeight: isToday?800:600, color: isToday?"#0EA5E9":"#334155", marginBottom:2, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                              <span>{day}</span>
+                              {dayAppts.length > 0 && <span style={{ background:"#0EA5E9", color:"#fff", borderRadius:"50%", width:16, height:16, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:700 }}>{dayAppts.length}</span>}
+                            </div>
+                            {dayAppts.slice(0,3).map(a => (
+                              <div key={a.id} style={{ fontSize:9, padding:"2px 4px", borderRadius:4, marginBottom:1, background: APPT_STATUSES[a.status]?.bg || "#F8FAFC", color: APPT_STATUSES[a.status]?.color || "#334155", fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                                {new Date(a.start_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})} {a.title}
+                              </div>
+                            ))}
+                            {dayAppts.length > 3 && <div style={{ fontSize:9, color:"#94A3B8", fontWeight:600 }}>+{dayAppts.length-3} mais</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{ marginTop:12, textAlign:"right" }}>
+                      <button onClick={() => openNewAppt(formatDateISO(agendaDate))} style={btnPrimary}>+ Novo Agendamento</button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ── Week View ── */}
+              {agendaView === "week" && (() => {
+                const weekDays = getWeekDays(agendaDate);
+                const today = new Date();
+                return (
+                  <div>
+                    <div style={{ display:"grid", gridTemplateColumns:"60px repeat(7,1fr)", gap:1, background:"#E2E8F0", borderRadius:12, overflow:"hidden", border:"1px solid #E2E8F0" }}>
+                      <div style={{ background:"#F1F5F9", padding:6 }}></div>
+                      {weekDays.map((d,i) => (
+                        <div key={i} style={{ background: isSameDay(d,today) ? "#F0F9FF" : "#F1F5F9", padding:"6px 4px", textAlign:"center" }}>
+                          <div style={{ fontSize:10, fontWeight:700, color:"#64748B" }}>{["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][d.getDay()]}</div>
+                          <div style={{ fontSize:16, fontWeight: isSameDay(d,today)?800:600, color: isSameDay(d,today)?"#0EA5E9":"#334155" }}>{d.getDate()}</div>
+                        </div>
+                      ))}
+                      {AGENDA_HOURS.map(h => (
+                        <React.Fragment key={h}>
+                          <div style={{ background:"#F8FAFC", padding:"4px 6px", fontSize:10, fontWeight:600, color:"#94A3B8", textAlign:"right", minHeight:48 }}>{String(h).padStart(2,"0")}:00</div>
+                          {weekDays.map((d,i) => {
+                            const dayAppts = getApptsForDay(d).filter(a => new Date(a.start_at).getHours() === h);
+                            return (
+                              <div key={i} onClick={() => openNewAppt(formatDateISO(d))}
+                                style={{ background:"#fff", padding:2, cursor:"pointer", minHeight:48, borderBottom:"1px solid #F1F5F9" }}
+                                onMouseOver={e => e.currentTarget.style.background="#F8FAFC"}
+                                onMouseOut={e => e.currentTarget.style.background="#fff"}>
+                                {dayAppts.map(a => (
+                                  <div key={a.id} onClick={(e) => { e.stopPropagation(); openEditAppt(a); }}
+                                    style={{ fontSize:10, padding:"3px 5px", borderRadius:4, marginBottom:1, background: APPT_STATUSES[a.status]?.bg || "#F8FAFC", color: APPT_STATUSES[a.status]?.color || "#334155", fontWeight:600, cursor:"pointer", borderLeft:`3px solid ${APPT_STATUSES[a.status]?.color || "#94A3B8"}` }}>
+                                    {new Date(a.start_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})} {a.title}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ── Day View ── */}
+              {agendaView === "day" && (() => {
+                const dayAppts = getApptsForDay(agendaDate);
+                const today = new Date();
+                return (
+                  <div>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+                      <div style={{ fontSize:16, fontWeight:700, color: isSameDay(agendaDate,today)?"#0EA5E9":"#334155" }}>
+                        {agendaDate.toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"})}
+                        {isSameDay(agendaDate,today) && <span style={{ marginLeft:8, fontSize:12, background:"#0EA5E9", color:"#fff", padding:"2px 8px", borderRadius:8, fontWeight:700 }}>Hoje</span>}
+                      </div>
+                      <button onClick={() => openNewAppt(formatDateISO(agendaDate))} style={btnPrimary}>+ Novo</button>
+                    </div>
+                    <div style={{ background:"#fff", borderRadius:12, border:"1px solid #E2E8F0", overflow:"hidden" }}>
+                      {AGENDA_HOURS.map(h => {
+                        const hourAppts = dayAppts.filter(a => new Date(a.start_at).getHours() === h);
+                        return (
+                          <div key={h} style={{ display:"flex", borderBottom:"1px solid #F1F5F9", minHeight:56 }}>
+                            <div style={{ width:60, padding:"8px 8px", fontSize:12, fontWeight:600, color:"#94A3B8", textAlign:"right", background:"#F8FAFC", borderRight:"1px solid #E2E8F0", flexShrink:0 }}>{String(h).padStart(2,"0")}:00</div>
+                            <div style={{ flex:1, padding:4, cursor:"pointer" }} onClick={() => openNewAppt(formatDateISO(agendaDate))}>
+                              {hourAppts.map(a => (
+                                <div key={a.id} onClick={(e) => { e.stopPropagation(); openEditAppt(a); }}
+                                  style={{ padding:"8px 12px", borderRadius:8, marginBottom:4, background: APPT_STATUSES[a.status]?.bg || "#F8FAFC", borderLeft:`4px solid ${APPT_STATUSES[a.status]?.color || "#94A3B8"}`, cursor:"pointer" }}>
+                                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                                    <div style={{ fontWeight:700, fontSize:14, color:"#0F172A" }}>{a.title}</div>
+                                    <div style={{ display:"flex", gap:4 }}>
+                                      <select value={a.status} onChange={e => updateApptStatus(a.id, e.target.value)}
+                                        onClick={e => e.stopPropagation()}
+                                        style={{ fontSize:11, padding:"2px 6px", borderRadius:6, border:"1px solid #E2E8F0", background:APPT_STATUSES[a.status]?.bg, color:APPT_STATUSES[a.status]?.color, fontWeight:700, cursor:"pointer" }}>
+                                        {Object.entries(APPT_STATUSES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                                      </select>
+                                      <button onClick={(e) => { e.stopPropagation(); deleteAppt(a.id); }}
+                                        style={{ background:"#FEF2F2", border:"1px solid #FECACA", borderRadius:6, padding:"2px 8px", color:"#EF4444", cursor:"pointer", fontSize:11, fontWeight:700 }}>✕</button>
+                                    </div>
+                                  </div>
+                                  <div style={{ fontSize:12, color:"#64748B" }}>
+                                    🕐 {new Date(a.start_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})} - {new Date(a.end_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
+                                    {a.professional_id && <span style={{ marginLeft:8 }}>👤 {getApptUserName(a.professional_id)}</span>}
+                                    {a.patient_id && <span style={{ marginLeft:8 }}>🦷 {getApptPatientName(a.patient_id)}</span>}
+                                  </div>
+                                  {a.notes && <div style={{ fontSize:11, color:"#94A3B8", marginTop:4 }}>{a.notes}</div>}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* ═══ APPOINTMENT FORM MODAL ═══ */}
+          <Modal isOpen={showApptForm} onClose={() => { setShowApptForm(false); setEditingAppt(null); setApptForm({...emptyApptForm}); }} title={editingAppt ? "Editar Agendamento" : "Novo Agendamento"} wide>
+            <Input label="Título *" value={apptForm.title} onChange={e => setApptForm({...apptForm, title:e.target.value})} placeholder="Ex: Consulta, Manutenção..." />
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+              <Select label="Profissional *" value={apptForm.professional_id}
+                onChange={e => setApptForm({...apptForm, professional_id:e.target.value})}
+                options={[{ value:"", label:"Selecione..." }, ...users.filter(u=>u.active && (u.role==="PROFESSIONAL"||isAdminRole(u.role))).map(u => ({ value:u.id, label:u.name }))]} />
+              <Select label="Paciente" value={apptForm.patient_id}
+                onChange={e => setApptForm({...apptForm, patient_id:e.target.value})}
+                options={[{ value:"", label:"(nenhum)" }, ...patients.map(p => ({ value:p.id, label: (p.codigo ? p.codigo+" - " : "") + p.name }))]} />
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+              <Input label="Início *" type="datetime-local" value={apptForm.start_at} onChange={e => setApptForm({...apptForm, start_at:e.target.value})} />
+              <Input label="Término *" type="datetime-local" value={apptForm.end_at} onChange={e => setApptForm({...apptForm, end_at:e.target.value})} />
+            </div>
+            {editingAppt && (
+              <Select label="Status" value={apptForm.status}
+                onChange={e => setApptForm({...apptForm, status:e.target.value})}
+                options={Object.entries(APPT_STATUSES).map(([k,v]) => ({ value:k, label:v.label }))} />
+            )}
+            <Input label="Observações" value={apptForm.notes} onChange={e => setApptForm({...apptForm, notes:e.target.value})} placeholder="Notas adicionais..." />
+            <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:16 }}>
+              <button onClick={() => { setShowApptForm(false); setEditingAppt(null); setApptForm({...emptyApptForm}); }} style={btnSecondary}>Cancelar</button>
+              <button onClick={saveAppointment} style={{ ...btnPrimary, opacity:(!apptForm.title.trim()||!apptForm.professional_id||!apptForm.start_at||!apptForm.end_at)?0.5:1 }}>
+                {editingAppt ? "Salvar Alterações" : "Criar Agendamento"}
+              </button>
+            </div>
+          </Modal>
 
           {/* ═══ NEW PATIENT MODAL ═══ */}
           <Modal isOpen={showNewPatient} onClose={() => setShowNewPatient(false)} title="Novo Paciente" wide>
