@@ -100,6 +100,21 @@ export const renegotiateSchema = z.object({
   firstDueDate: z.string().min(1),
 });
 
+// ─── Appointments ───────────────────────────────────────────
+export const createAppointmentSchema = z.object({
+  patient_id: z.string().uuid().nullable().default(null),
+  professional_id: uuidSchema,
+  title: z.string().min(1, "Título é obrigatório").max(200),
+  start_at: z.string().min(1, "Horário de início é obrigatório"),
+  end_at: z.string().min(1, "Horário de término é obrigatório"),
+  notes: z.string().max(1000).default(""),
+  status: z.enum(["scheduled", "confirmed", "in_progress", "completed", "cancelled", "no_show"]).default("scheduled"),
+});
+
+export const updateAppointmentSchema = createAppointmentSchema.extend({
+  id: uuidSchema,
+});
+
 // ─── Waitlist ────────────────────────────────────────────────
 export const createWaitlistEntrySchema = z.object({
   patient_id: uuidSchema,

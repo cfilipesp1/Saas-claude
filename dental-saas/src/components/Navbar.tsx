@@ -8,6 +8,7 @@ import {
   Users,
   UserRound,
   ClipboardList,
+  CalendarDays,
   DollarSign,
   FileText,
   LogOut,
@@ -21,6 +22,7 @@ const links = [
   { href: "/professionals", label: "Profissionais", icon: Users },
   { href: "/patients", label: "Pacientes", icon: UserRound },
   { href: "/waitlist", label: "Fila de Espera", icon: ClipboardList },
+  { href: "/schedule", label: "Agenda", icon: CalendarDays },
   { href: "/budgets", label: "Orçamentos", icon: FileText },
   { href: "/financial", label: "Financeiro", icon: DollarSign },
 ];

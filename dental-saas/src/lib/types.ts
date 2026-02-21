@@ -216,6 +216,34 @@ export interface RecurringRule {
   created_at: string;
 }
 
+// ─── Schedule / Appointments Module ─────────────────────────
+
+export type AppointmentStatus =
+  | "scheduled"
+  | "confirmed"
+  | "in_progress"
+  | "completed"
+  | "cancelled"
+  | "no_show";
+
+export interface Appointment {
+  id: string;
+  clinic_id: string;
+  patient_id: string | null;
+  professional_id: string;
+  title: string;
+  start_at: string;
+  end_at: string;
+  status: AppointmentStatus;
+  notes: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  // joined
+  patient?: Patient | null;
+  professional?: Professional | null;
+}
+
 // ─── Budgets Module ──────────────────────────────────────────
 
 export type BudgetType = "ORTHO" | "SPECIALTY";
