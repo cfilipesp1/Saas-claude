@@ -11,8 +11,6 @@ import {
   Calendar,
 } from "lucide-react";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 interface Props {
   summary: {
     transactions: any[];

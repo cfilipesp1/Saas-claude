@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint src/"
   },
   "keywords": [],
   "author": "",
@@ -28,6 +28,9 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/react-dom": "^19.2.3"
+    "@eslint/eslintrc": "^3.3.3",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.3",
+    "eslint-config-next": "^16.1.6"
   }
 }

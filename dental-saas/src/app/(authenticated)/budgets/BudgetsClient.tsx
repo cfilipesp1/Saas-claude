@@ -19,7 +19,6 @@ interface PatientInfo {
   birth_date: string | null;
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 interface BudgetRow {
   id: string;
   type: string;

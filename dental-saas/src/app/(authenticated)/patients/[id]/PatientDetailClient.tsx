@@ -97,14 +97,8 @@ export default function PatientDetailClient({
   const [editingData, setEditingData] = useState(false);
 
   // Alert popup — shows on mount if anamnesis has relevant flags
-  const [showAlert, setShowAlert] = useState(false);
   const alertItems = useMemo(() => buildAlertItems(anamnesis), [anamnesis]);
-
-  useEffect(() => {
-    if (alertItems.length > 0) {
-      setShowAlert(true);
-    }
-  }, [alertItems.length]);
+  const [showAlert, setShowAlert] = useState(alertItems.length > 0);
 
   // ---- Patient data update ----
   function handleUpdatePatient(formData: FormData) {
