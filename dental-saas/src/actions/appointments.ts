@@ -32,6 +32,8 @@ export async function createAppointment(formData: FormData): Promise<{ error?: s
     return { error: parsed.error.issues[0].message };
   }
 
+  const createdBy = user?.id && uuidSchema.safeParse(user.id).success ? user.id : null;
+
   const { error } = await supabase
     .from("appointments")
     .insert({
@@ -42,7 +44,7 @@ export async function createAppointment(formData: FormData): Promise<{ error?: s
       end_at: parsed.data.end_at,
       notes: parsed.data.notes,
       status: parsed.data.status,
-      created_by: user?.id ?? null,
+      created_by: createdBy,
     });
 
   if (error) {
