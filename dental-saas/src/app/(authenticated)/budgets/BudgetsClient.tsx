@@ -6,7 +6,7 @@ import { createBudget } from "@/actions/budgets";
 import { X, FileText, CheckCircle, Trash2 } from "lucide-react";
 import { updateBudgetStatus, deleteBudget } from "@/actions/budgets";
 import BudgetTypeStep from "./BudgetTypeStep";
-import OrthoTypeStep from "./OrthoTypeStep";
+import type { BudgetTypeOption } from "./BudgetTypeStep";
 import OrthoModelStep from "./OrthoModelStep";
 import InvisalignStep from "./InvisalignStep";
 import BudgetSummaryStep from "./BudgetSummaryStep";
@@ -51,7 +51,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   cancelled: { label: "Cancelado", color: "bg-red-100 text-red-700" },
 };
 
-const STEP_LABELS = ["Tipo", "Modalidade", "Modelo", "Resumo"];
+const STEP_LABELS = ["Tipo", "Modelo", "Resumo"];
 
 export default function BudgetsClient({
   budgets,
@@ -79,22 +79,24 @@ export default function BudgetsClient({
     setSelection(null);
   }
 
-  function handleTypeSelect(type: "ORTHO" | "SPECIALTY") {
-    setBudgetType(type);
-    if (type === "ORTHO") {
+  function handleTypeSelect(type: BudgetTypeOption) {
+    if (type === "ORTHO_FIXA") {
+      setBudgetType("ORTHO");
+      setOrthoType("TRADICIONAL");
       setStep(1);
+    } else if (type === "INVISALIGN") {
+      setBudgetType("ORTHO");
+      setOrthoType("INVISALIGN");
+      setStep(1);
+    } else {
+      // SPECIALTY: future implementation
+      setBudgetType("SPECIALTY");
     }
-    // SPECIALTY: future implementation
-  }
-
-  function handleOrthoTypeSelect(type: "TRADICIONAL" | "INVISALIGN") {
-    setOrthoType(type);
-    setStep(2);
   }
 
   function handleModelSelect(sel: Selection) {
     setSelection(sel);
-    setStep(3);
+    setStep(2);
   }
 
   function handleApprove(data: any) {
@@ -184,45 +186,38 @@ export default function BudgetsClient({
         {step === 0 && (
           <BudgetTypeStep
             onSelect={(type) => {
-              if (type === "ORTHO") {
-                handleTypeSelect(type);
-              } else {
+              if (type === "SPECIALTY") {
                 // SPECIALTY: close wizard, future implementation
                 resetWizard();
+              } else {
+                handleTypeSelect(type);
               }
             }}
           />
         )}
 
-        {step === 1 && (
-          <OrthoTypeStep
-            onSelect={handleOrthoTypeSelect}
+        {step === 1 && orthoType === "TRADICIONAL" && (
+          <OrthoModelStep
+            onSelect={handleModelSelect}
             onBack={() => setStep(0)}
           />
         )}
 
-        {step === 2 && orthoType === "TRADICIONAL" && (
-          <OrthoModelStep
-            onSelect={handleModelSelect}
-            onBack={() => setStep(1)}
-          />
-        )}
-
-        {step === 2 && orthoType === "INVISALIGN" && (
+        {step === 1 && orthoType === "INVISALIGN" && (
           <InvisalignStep
             onSelect={handleModelSelect}
-            onBack={() => setStep(1)}
+            onBack={() => setStep(0)}
           />
         )}
 
-        {step === 3 && selection && orthoType && (
+        {step === 2 && selection && orthoType && (
           <BudgetSummaryStep
             orthoType={orthoType}
             selection={selection}
             patients={patients}
             onApprove={handleApprove}
             onCancel={resetWizard}
-            onBack={() => setStep(2)}
+            onBack={() => setStep(1)}
             isPending={isPending}
           />
         )}
