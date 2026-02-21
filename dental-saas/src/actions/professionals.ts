@@ -2,6 +2,8 @@
 
 import { createServerSupabase } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { createProfessionalSchema, updateProfessionalSchema, uuidSchema } from "@/lib/validation";
+import { logger } from "@/lib/logger";
 
 export async function getProfessionals() {
   const supabase = await createServerSupabase();
@@ -15,20 +17,25 @@ export async function getProfessionals() {
 
 export async function createProfessional(formData: FormData): Promise<{ error?: string }> {
   const supabase = await createServerSupabase();
-  const name = formData.get("name");
-  if (!name || typeof name !== "string" || name.trim().length === 0) {
-    return { error: "Nome é obrigatório" };
+
+  const raw = {
+    name: (formData.get("name") as string) ?? "",
+    specialty: (formData.get("specialty") as string) ?? "",
+  };
+
+  const parsed = createProfessionalSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0].message };
   }
-  const specialty = formData.get("specialty") as string;
 
   const { error } = await supabase.from("professionals").insert({
-    name: name.trim(),
-    specialty: specialty || "",
+    name: parsed.data.name.trim(),
+    specialty: parsed.data.specialty,
   });
 
   if (error) {
-    console.error("createProfessional error:", error);
-    return { error: `Erro ao criar profissional: ${error.message} (code: ${error.code})` };
+    logger.error("createProfessional failed", error, "professionals.create");
+    return { error: `Erro ao criar profissional: ${error.message}` };
   }
 
   revalidatePath("/professionals");
@@ -37,22 +44,31 @@ export async function createProfessional(formData: FormData): Promise<{ error?: 
 
 export async function updateProfessional(formData: FormData): Promise<{ error?: string }> {
   const supabase = await createServerSupabase();
-  const id = formData.get("id") as string;
-  const name = formData.get("name");
-  if (!id || !name || typeof name !== "string" || name.trim().length === 0) {
-    return { error: "ID e nome são obrigatórios" };
+
+  const raw = {
+    id: (formData.get("id") as string) ?? "",
+    name: (formData.get("name") as string) ?? "",
+    specialty: (formData.get("specialty") as string) ?? "",
+    active: formData.get("active") === "true",
+  };
+
+  const parsed = updateProfessionalSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0].message };
   }
-  const specialty = formData.get("specialty") as string;
-  const active = formData.get("active") === "true";
 
   const { error } = await supabase
     .from("professionals")
-    .update({ name: name.trim(), specialty, active })
-    .eq("id", id);
+    .update({
+      name: parsed.data.name.trim(),
+      specialty: parsed.data.specialty,
+      active: parsed.data.active,
+    })
+    .eq("id", parsed.data.id);
 
   if (error) {
-    console.error("updateProfessional error:", error);
-    return { error: `Erro ao atualizar profissional: ${error.message} (code: ${error.code})` };
+    logger.error("updateProfessional failed", error, "professionals.update");
+    return { error: `Erro ao atualizar profissional: ${error.message}` };
   }
 
   revalidatePath("/professionals");
@@ -60,12 +76,15 @@ export async function updateProfessional(formData: FormData): Promise<{ error?: 
 }
 
 export async function deleteProfessional(id: string): Promise<{ error?: string }> {
+  const parsed = uuidSchema.safeParse(id);
+  if (!parsed.success) return { error: "ID inválido" };
+
   const supabase = await createServerSupabase();
-  const { error } = await supabase.from("professionals").delete().eq("id", id);
+  const { error } = await supabase.from("professionals").delete().eq("id", parsed.data);
 
   if (error) {
-    console.error("deleteProfessional error:", error);
-    return { error: `Erro ao excluir profissional: ${error.message} (code: ${error.code})` };
+    logger.error("deleteProfessional failed", error, "professionals.delete");
+    return { error: `Erro ao excluir profissional: ${error.message}` };
   }
 
   revalidatePath("/professionals");

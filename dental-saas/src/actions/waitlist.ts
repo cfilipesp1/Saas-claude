@@ -2,6 +2,8 @@
 
 import { createServerSupabase } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { createWaitlistEntrySchema, uuidSchema } from "@/lib/validation";
+import { logger } from "@/lib/logger";
 import type { WaitlistStatus } from "@/lib/types";
 
 export async function createWaitlistEntry(formData: FormData): Promise<{ error?: string }> {
@@ -10,34 +12,37 @@ export async function createWaitlistEntry(formData: FormData): Promise<{ error?:
     data: { user },
   } = await supabase.auth.getUser();
 
-  const patient_id = formData.get("patient_id") as string;
-  if (!patient_id) return { error: "Paciente é obrigatório" };
+  const raw = {
+    patient_id: (formData.get("patient_id") as string) ?? "",
+    specialty: (formData.get("specialty") as string) ?? "",
+    preferred_professional_id: (formData.get("preferred_professional_id") as string) || null,
+    priority: parseInt((formData.get("priority") as string) || "0", 10),
+    notes: (formData.get("notes") as string) ?? "",
+  };
 
-  const specialty = (formData.get("specialty") as string) || "";
-  const preferred_professional_id =
-    (formData.get("preferred_professional_id") as string) || null;
-  const priority = parseInt((formData.get("priority") as string) || "0", 10);
-  const notes = (formData.get("notes") as string) || "";
+  const parsed = createWaitlistEntrySchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0].message };
+  }
 
   const { data: entry, error } = await supabase
     .from("waitlist_entries")
     .insert({
-      patient_id,
-      specialty,
-      preferred_professional_id: preferred_professional_id || null,
-      priority,
-      notes,
+      patient_id: parsed.data.patient_id,
+      specialty: parsed.data.specialty,
+      preferred_professional_id: parsed.data.preferred_professional_id || null,
+      priority: parsed.data.priority,
+      notes: parsed.data.notes,
       status: "NEW" as WaitlistStatus,
     })
     .select()
     .single();
 
   if (error) {
-    console.error("createWaitlistEntry error:", error);
-    return { error: `Erro ao adicionar à fila: ${error.message} (code: ${error.code})` };
+    logger.error("createWaitlistEntry failed", error, "waitlist.create");
+    return { error: `Erro ao adicionar à fila: ${error.message}` };
   }
 
-  // Create initial event (best-effort: don't fail the whole operation if event logging fails)
   const { error: eventError } = await supabase.from("waitlist_events").insert({
     waitlist_entry_id: entry.id,
     from_status: null,
@@ -47,7 +52,7 @@ export async function createWaitlistEntry(formData: FormData): Promise<{ error?:
   });
 
   if (eventError) {
-    console.error("Failed to create initial waitlist event:", eventError.message);
+    logger.error("Failed to create initial waitlist event", eventError, "waitlist.create");
   }
 
   revalidatePath("/waitlist");
@@ -60,6 +65,9 @@ export async function updateWaitlistStatus(
   toStatus: WaitlistStatus,
   note: string
 ): Promise<{ error?: string }> {
+  const parsedId = uuidSchema.safeParse(entryId);
+  if (!parsedId.success) return { error: "ID inválido" };
+
   const supabase = await createServerSupabase();
   const {
     data: { user },
@@ -68,17 +76,16 @@ export async function updateWaitlistStatus(
   const { error } = await supabase
     .from("waitlist_entries")
     .update({ status: toStatus })
-    .eq("id", entryId)
-    .eq("status", fromStatus); // Optimistic lock: only update if status hasn't changed
+    .eq("id", parsedId.data)
+    .eq("status", fromStatus);
 
   if (error) {
-    console.error("updateWaitlistStatus error:", error);
-    return { error: `Erro ao atualizar status: ${error.message} (code: ${error.code})` };
+    logger.error("updateWaitlistStatus failed", error, "waitlist.updateStatus");
+    return { error: `Erro ao atualizar status: ${error.message}` };
   }
 
-  // Create status change event (best-effort)
   const { error: eventError } = await supabase.from("waitlist_events").insert({
-    waitlist_entry_id: entryId,
+    waitlist_entry_id: parsedId.data,
     from_status: fromStatus,
     to_status: toStatus,
     actor_user_id: user?.id ?? null,
@@ -86,7 +93,7 @@ export async function updateWaitlistStatus(
   });
 
   if (eventError) {
-    console.error("Failed to create waitlist status event:", eventError.message);
+    logger.error("Failed to create waitlist status event", eventError, "waitlist.updateStatus");
   }
 
   revalidatePath("/waitlist");
@@ -94,23 +101,29 @@ export async function updateWaitlistStatus(
 }
 
 export async function getWaitlistEvents(entryId: string) {
+  const parsedId = uuidSchema.safeParse(entryId);
+  if (!parsedId.success) return [];
+
   const supabase = await createServerSupabase();
   const { data, error } = await supabase
     .from("waitlist_events")
     .select("*")
-    .eq("waitlist_entry_id", entryId)
+    .eq("waitlist_entry_id", parsedId.data)
     .order("created_at", { ascending: false });
   if (error) return [];
   return data ?? [];
 }
 
 export async function deleteWaitlistEntry(id: string): Promise<{ error?: string }> {
+  const parsed = uuidSchema.safeParse(id);
+  if (!parsed.success) return { error: "ID inválido" };
+
   const supabase = await createServerSupabase();
-  const { error } = await supabase.from("waitlist_entries").delete().eq("id", id);
+  const { error } = await supabase.from("waitlist_entries").delete().eq("id", parsed.data);
 
   if (error) {
-    console.error("deleteWaitlistEntry error:", error);
-    return { error: `Erro ao remover da fila: ${error.message} (code: ${error.code})` };
+    logger.error("deleteWaitlistEntry failed", error, "waitlist.delete");
+    return { error: `Erro ao remover da fila: ${error.message}` };
   }
 
   revalidatePath("/waitlist");

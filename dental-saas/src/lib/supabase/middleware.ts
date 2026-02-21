@@ -1,7 +1,28 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function updateSession(request: NextRequest) {
+  // Rate limiting for API/action routes
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const isActionRequest = request.method === "POST";
+
+  if (isActionRequest) {
+    const { allowed, remaining } = rateLimit(ip);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "Muitas requisições. Tente novamente em 1 minuto." },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": "60",
+            "X-RateLimit-Remaining": String(remaining),
+          },
+        }
+      );
+    }
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -42,8 +63,6 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Redirect authenticated users away from /login and /signup
-  // BUT allow them to stay on /login if they have no profile (error=no_profile)
-  // to avoid infinite redirect: middleware→/dashboard → layout(no profile)→/login → middleware→/dashboard...
   if (
     user &&
     !request.nextUrl.searchParams.has("error") &&

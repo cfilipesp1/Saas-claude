@@ -5,6 +5,10 @@ import Link from "next/link";
 export default async function DashboardPage() {
   const supabase = await createServerSupabase();
 
+  // Mark overdue receivables/payables on every dashboard load
+  // This replaces pg_cron (not available on Supabase Free plan)
+  await supabase.rpc("mark_overdue_items").then(() => {}, () => {});
+
   const [
     { count: profCount },
     { count: patCount },
