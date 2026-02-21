@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getProfile, getClinic } from "@/actions/auth";
+import { getProfileWithClinic } from "@/actions/auth";
 import Navbar from "@/components/Navbar";
 
 export default async function AuthenticatedLayout({
@@ -7,10 +7,10 @@ export default async function AuthenticatedLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const profile = await getProfile();
-  if (!profile) redirect("/login?error=no_profile");
+  const result = await getProfileWithClinic();
+  if (!result) redirect("/login?error=no_profile");
 
-  const clinic = await getClinic();
+  const { profile, clinic } = result;
   const clinicName = clinic?.name ?? "Clínica";
 
   return (

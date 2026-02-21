@@ -2,18 +2,26 @@
 
 import { createServerSupabase } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { uuidSchema } from "@/lib/validation";
+import { logger } from "@/lib/logger";
 
 export async function getAnamnesis(patientId: string) {
+  const parsed = uuidSchema.safeParse(patientId);
+  if (!parsed.success) return null;
+
   const supabase = await createServerSupabase();
   const { data } = await supabase
     .from("anamnesis")
     .select("*")
-    .eq("patient_id", patientId)
+    .eq("patient_id", parsed.data)
     .single();
   return data;
 }
 
 export async function upsertAnamnesis(patientId: string, formData: FormData): Promise<{ error?: string }> {
+  const parsedId = uuidSchema.safeParse(patientId);
+  if (!parsedId.success) return { error: "ID de paciente inválido" };
+
   const supabase = await createServerSupabase();
   const {
     data: { user },
@@ -22,7 +30,6 @@ export async function upsertAnamnesis(patientId: string, formData: FormData): Pr
   const boolField = (name: string) => formData.get(name) === "on";
   const textField = (name: string) => (formData.get(name) as string) || "";
 
-  // Clear detail fields when the corresponding boolean is off
   const has_allergy = boolField("has_allergy");
   const has_heart_disease = boolField("has_heart_disease");
   const has_diabetes = boolField("has_diabetes");
@@ -31,7 +38,7 @@ export async function upsertAnamnesis(patientId: string, formData: FormData): Pr
   const uses_medication = boolField("uses_medication");
 
   const payload = {
-    patient_id: patientId,
+    patient_id: parsedId.data,
     has_allergy,
     allergy_details: has_allergy ? textField("allergy_details") : "",
     has_heart_disease,
@@ -53,17 +60,16 @@ export async function upsertAnamnesis(patientId: string, formData: FormData): Pr
     updated_at: new Date().toISOString(),
   };
 
-  // Use upsert to avoid read-then-write race condition
   const { error } = await supabase.from("anamnesis").upsert(
     payload,
     { onConflict: "patient_id" }
   );
 
   if (error) {
-    console.error("upsertAnamnesis error:", error);
-    return { error: `Erro ao salvar anamnese: ${error.message} (code: ${error.code})` };
+    logger.error("upsertAnamnesis failed", error, "anamnesis.upsert");
+    return { error: `Erro ao salvar anamnese: ${error.message}` };
   }
 
-  revalidatePath(`/patients/${patientId}`);
+  revalidatePath(`/patients/${parsedId.data}`);
   return {};
 }
