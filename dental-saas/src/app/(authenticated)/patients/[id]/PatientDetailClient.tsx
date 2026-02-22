@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition, useMemo } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { updatePatient } from "@/actions/patients";
 import { upsertAnamnesis } from "@/actions/anamnesis";
 import type { Patient, Anamnesis } from "@/lib/types";
